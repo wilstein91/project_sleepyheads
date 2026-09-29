@@ -103,6 +103,9 @@ insert into account_map (metric, priority, account_id, account_nm, industry_type
   ('revenue', 1, 'ifrs-full_Revenue', '매출액', null),
   ('revenue', 2, 'ifrs-full_Revenue', '영업수익', 'financial'),
   ('operating_income', 1, 'dart_OperatingIncomeLoss', '영업이익', null),
+  -- 금융지주(KB금융 등)는 dart_OperatingIncomeLoss 대신 이 계정 ID를 쓴다.
+  -- 2024 사업보고서 CFS 실제 응답으로 확인 (tests/fixtures/dart/financials/00688996_kb_financial_2024_11011_CFS.json)
+  ('operating_income', 2, 'ifrs-full_ProfitLossFromOperatingActivities', '영업이익', 'financial'),
   ('net_income', 1, 'ifrs-full_ProfitLoss', '당기순이익', null),
   ('owners_net_income', 1, 'ifrs-full_ProfitLossAttributableToOwnersOfParent', '지배기업소유주지분순이익', null),
   ('equity', 1, 'ifrs-full_Equity', '자본총계', null),
