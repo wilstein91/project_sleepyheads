@@ -6,7 +6,7 @@
 | 문서 종류 | TECH_SPEC (기술 명세) |
 | 작성자 | Sung, Hyun-Joon · Lee, Yelim · ByeongJun Min |
 | 작성일 | 2026-09-28 |
-| 버전 | v0.5 |
+| 버전 | v0.5.1 |
 | 기준 PRD | [PRD.md](./PRD.md) v0.5 |
 | 관련 문서 | [API_SPEC.md](./API_SPEC.md) v0.2 — 서버 API 상세 명세 |
 
@@ -18,6 +18,7 @@
 | **v0.3** | 2026-09-28 | **질문형 분석 구조로 전환: 분석 요청 형식·허용 도구·서버 검사(§4), 데이터 버전(§5), 전처리 진단(§9), 네이버 뉴스 수집(§10), AI 역할 확대·숫자 자리표시자 방식(§11), 좌 차트/우 분석 글 화면(§12), 질문 단위 한도(§13), 실행 기록·취소·작업 큐(§4.8~4.9), 재무+주가 결합 검증(§6.6), 회귀·대용량 테스트(§20)** |
 | v0.4 | 2026-09-28 | 백엔드를 Supabase + Vercel로 확정하고 서버 API 상세를 [API_SPEC.md](./API_SPEC.md)로 분리. 기업 목록 동기화를 Vercel Cron(하루 1회)으로 확정, 요청 속도 제한을 질문 관련(분당 10회)·전체(분당 120회)로 분리, `CRON_SECRET` 추가 |
 | v0.5 | 2026-09-29 | **서비스 범위 판정·정중한 거절(§4.11) 추가**: 분석 요청 형식에 `scope`, 3중 판정(서버 1차 필터 → AI 판정 → 서버 후검사), 거절은 서버 고정 문구, 거절 통계·테스트 추가 |
+| v0.5.1 | 2026-09-29 | WU-101 DB 스키마 작성 중 발견: `max_declines_per_day`(회원별 상한, F-U8)를 판정할 컬럼이 없었음 — `decline_stats_daily`는 전체 집계만, `usage_daily`엔 회원별 거절 횟수 컬럼이 없었다. §15.1 `usage_daily`에 `declines` 컬럼 추가 |
 
 > 이 문서는 PRD의 "무엇을 만들지"를 "어떻게 만들지"로 옮긴 것이다. 기능 ID(F-xx)는 PRD v0.4의 요구사항 ID를 그대로 쓴다.
 
@@ -643,7 +644,7 @@ sequenceDiagram
 | 테이블 | 주요 컬럼 |
 |---|---|
 | `profiles` 🔒 | `id`, `nickname`, `email`, `agreed_terms_at`, `created_at` |
-| `usage_daily` 🔒(읽기만) | `user_id`, `day_kst`, `questions`, `dart_calls` |
+| `usage_daily` 🔒(읽기만) | `user_id`, `day_kst`, `questions`, `dart_calls`, `declines`(회원별 하루 거절 횟수, `max_declines_per_day` 판정용) |
 | `quota_config` 🗄️ | `key`, `value` |
 | `api_usage_daily` 🗄️ | `day_kst`, `provider`(dart/price/naver/llm), `calls`, `input_tokens`, `output_tokens`, `cost_usd`, `blocked_at` |
 
