@@ -18,9 +18,10 @@ export interface FigureAllocator {
   figures: Record<string, Figure>;
 }
 
-export function createFigureAllocator(): FigureAllocator {
+/** `startAt`부터 번호를 붙인다 — 투자 리포트는 100000부터 써서 질문 결과의 숫자 ID(f1…)와 겹치지 않는다 */
+export function createFigureAllocator(startAt = 0): FigureAllocator {
   const figures: Record<string, Figure> = {};
-  let seq = 0;
+  let seq = startAt;
 
   return {
     figures,

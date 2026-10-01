@@ -131,7 +131,7 @@ describe("createSupabaseEngineStore", () => {
       maxSteps: 6,
       maxRetries: 2,
       maxSeconds: 90,
-      maxLlmCostUsd: 0.01,
+      maxLlmCostUsd: 0.1,
     });
   });
 });

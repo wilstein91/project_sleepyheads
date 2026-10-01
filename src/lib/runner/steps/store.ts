@@ -53,7 +53,8 @@ export const DEFAULT_LIMITS: EngineLimits = {
   maxSteps: 8,
   maxRetries: 2,
   maxSeconds: 90,
-  maxLlmCostUsd: 0.01,
+  // quota_config에 값이 없을 때만 — 운영 값은 $0.10 (분석 글 인사이트 강화, 마이그레이션 20261001230000)
+  maxLlmCostUsd: 0.1,
 };
 
 export interface AnalysisPatch {
@@ -95,6 +96,8 @@ export interface EngineStore {
     dataVersionId: string;
     requestHash: string;
     excludeAnalysisId: string;
+    /** 투자 리포트가 있으면 그 주가 기준일 — 같은 기준일 리포트로 쓴 글만 재사용 */
+    reportPriceDate?: string | null;
   }): Promise<Explanation | null>;
   /**
    * 같은 요청으로 끝난 분석이 있고, 그 데이터 버전 이후 새 공시가 없는가 — 그러면 이번에도 같은 데이터 버전이 나와

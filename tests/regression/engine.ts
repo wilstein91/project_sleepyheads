@@ -6,7 +6,7 @@
 import type { CompanyRef, NullReason, Quarter } from "@/contracts";
 import type { DartFinancialStatementItem } from "@/lib/financials/types";
 import { marketCap, pbr, per, qoq, yoy } from "@/lib/metrics/formulas";
-import { joinFinancialsWithPrices } from "@/lib/price/join";
+import { joinFinancialsWithPrices, type PriceRow } from "@/lib/price/join";
 import type { Computed } from "@/lib/metrics/types";
 import { ensureCompanyFinancials, type CompanyFinancials } from "@/lib/runner/company-financials";
 import dongwonMobility from "../accuracy/fixtures/dongwon-mobility.json";
@@ -184,8 +184,51 @@ export async function engineValue(
   priceDate?: string,
 ): Promise<EngineValue> {
   const financials = await financialsOf(company);
+  let valuation: ValuationInput | undefined;
   if (/^(per|pbr|market_cap)$/.test(metric)) {
-    return valuationValue(company, financials, metric, period as Quarter, priceDate);
+    const fixture = FIXTURES[company];
+    if (fixture.corp_code !== VALUATION.corp_code || !priceDate) {
+      throw new Error(`${metric}: 주가 fixture가 있는 기업(skHynix)·priceDate가 필요합니다`);
+    }
+    valuation = {
+      corpCode: fixture.corp_code,
+      stockCode: fixture.stock_code,
+      name: fixture.corp_name,
+      priceDate,
+      prices: VALUATION.prices.map((p) => ({
+        stockCode: p.srtnCd,
+        baseDate: `${p.basDt.slice(0, 4)}-${p.basDt.slice(4, 6)}-${p.basDt.slice(6, 8)}`,
+        closePrice: BigInt(p.clpr),
+        listedShares: BigInt(p.lstgStCnt),
+        name: p.itmsNm,
+      })),
+    };
+  }
+  return valueFromFinancials(financials, metric, period, valuation);
+}
+
+/** 주가 지표용 입력 — 결합할 기업과 주가 행 (fixture 또는 scripts/refresh-answers.mjs가 새로 받은 값) */
+export interface ValuationInput {
+  corpCode: string;
+  stockCode: string;
+  name: string;
+  priceDate: string;
+  prices: PriceRow[];
+}
+
+/**
+ * 받아 둔 재무(`ensureCompanyFinancials` 결과)로 정답 한 줄을 계산한다 — 원문을 어디서 받았는지와 상관없다
+ * (회귀 테스트는 fixture, `scripts/refresh-answers.mjs`는 전자공시·주가 API를 새로 부른 값).
+ */
+export function valueFromFinancials(
+  financials: CompanyFinancials,
+  metric: string,
+  period: string,
+  valuation?: ValuationInput,
+): EngineValue {
+  if (/^(per|pbr|market_cap)$/.test(metric)) {
+    if (!valuation) throw new Error(`${metric}: 주가 입력(priceDate·주가 행)이 필요합니다`);
+    return valuationValue(financials, metric, period as Quarter, valuation);
   }
   const at = (q: Quarter) => financials.metricsByQuarter.get(q)?.metrics;
 
@@ -220,30 +263,19 @@ export async function engineValue(
 }
 
 function valuationValue(
-  company: string,
   financials: CompanyFinancials,
   metric: string,
   quarter: Quarter,
-  priceDate: string | undefined,
+  valuation: ValuationInput,
 ): EngineValue {
-  const fixture = FIXTURES[company];
-  if (fixture.corp_code !== VALUATION.corp_code || !priceDate) {
-    throw new Error(`${metric}: 주가 fixture가 있는 기업(skHynix)·priceDate가 필요합니다`);
-  }
   const metrics = financials.metricsByQuarter.get(quarter)?.metrics;
   const joined = joinFinancialsWithPrices({
     financials: [
-      { corpCode: fixture.corp_code, stockCode: fixture.stock_code, name: fixture.corp_name },
+      { corpCode: valuation.corpCode, stockCode: valuation.stockCode, name: valuation.name },
     ],
     listings: [],
-    prices: VALUATION.prices.map((p) => ({
-      stockCode: p.srtnCd,
-      baseDate: `${p.basDt.slice(0, 4)}-${p.basDt.slice(4, 6)}-${p.basDt.slice(6, 8)}`,
-      closePrice: BigInt(p.clpr),
-      listedShares: BigInt(p.lstgStCnt),
-      name: p.itmsNm,
-    })),
-    baseDate: priceDate,
+    prices: valuation.prices,
+    baseDate: valuation.priceDate,
   });
   const price = joined.rows[0].price;
   const cap = marketCap(price?.closePrice, price?.listedShares);

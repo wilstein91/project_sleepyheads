@@ -4,11 +4,19 @@ import {
   clipToAvailableRange,
   compareQuarters,
   EARLIEST_QUARTER,
+  EARLIEST_QUARTER_LABEL,
   formatQuarter,
   latestAvailableQuarter,
   parseQuarter,
   quarterSpan,
 } from "@/lib/ask/quarter";
+
+describe("조회 시작 분기 (TECH §4.3)", () => {
+  it("2016Q1 — OpenDART 재무 API에 2015년 분기보고서가 없다 (Phase 5 팀 결정)", () => {
+    expect(EARLIEST_QUARTER).toBe("2016Q1");
+    expect(EARLIEST_QUARTER_LABEL).toBe("2016년 1분기");
+  });
+});
 
 describe("quarter 산술", () => {
   it("parseQuarter/formatQuarter가 왕복한다", () => {
@@ -65,7 +73,7 @@ describe("quarter 산술", () => {
       });
     });
 
-    it("시작이 2015Q1보다 이르면 잘라내고 clipped=true", () => {
+    it("시작이 2016Q1보다 이르면 잘라내고 clipped=true", () => {
       expect(clipToAvailableRange("2010Q1", "2016Q4", latest)).toEqual({
         from: EARLIEST_QUARTER,
         to: "2016Q4",
@@ -73,8 +81,9 @@ describe("quarter 산술", () => {
       });
     });
 
-    it("전부 2015Q1 이전이면 null (OUT_OF_RANGE)", () => {
+    it("전부 2016Q1 이전이면 null (OUT_OF_RANGE) — 2015년도 (분기보고서 없음)", () => {
       expect(clipToAvailableRange("2010Q1", "2013Q4", latest)).toBeNull();
+      expect(clipToAvailableRange("2015Q1", "2015Q4", latest)).toBeNull();
     });
 
     it("from이 latest보다 미래면 null", () => {

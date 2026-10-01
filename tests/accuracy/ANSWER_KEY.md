@@ -662,3 +662,25 @@
 | 삼성전자 | 89,492,412,000,000 ÷ 171,499,470,000,000 × 100 | **52.1823%** |
 | KB금융 | 영업이익 2,712,548,000,000 ÷ **영업수익** — 영업수익 합계 행 없음(§1.3) | **계산 불가** (`MISSING_ACCOUNT`) |
 | 신한지주 | 영업이익 2,476,281,000,000 ÷ 영업수익 — 같음 | **계산 불가** |
+
+## 9. 정답 다시 구하기 (`scripts/refresh-answers.mjs`, Phase 5)
+
+회귀 숫자 정답(`tests/regression/answers/*.json`)을 **지금 원문으로 다시 계산**해 지금 정답과 다른 곳만 표로 보여 준다. **파일은 고치지 않는다.** 전자공시·주가 API를 직접 부르고(사용량 기록 없음, 정답 전체에 전자공시 약 40~80건) 받은 값은 메모리에만 둔다 — 팀 DB(Supabase)는 읽지도 쓰지도 않는다. AI 0건. `.env.local`의 `OPENDART_API_KEY`·`DATA_GO_KR_SERVICE_KEY`만 쓴다.
+
+```bash
+node scripts/refresh-answers.mjs                # 정답 그대로 다시 계산 → 다른 곳만 (없으면 ✅, 있으면 종료 코드 1)
+node scripts/refresh-answers.mjs --today        # 주가 정답을 정답의 기준 시각(now) 대신 지금으로
+node scripts/refresh-answers.mjs --to 2026Q3    # 2026Q2로 끝나는 정답을 2026Q3로 옮겨 새 정답 후보 표
+node scripts/refresh-answers.mjs --to 2026Q3 --json > new-answers.json   # 새 정답 후보 JSON (붙여 넣기용)
+```
+
+- 상세 정답(질문·숫자 목록)은 실행기 `runAnalysis` 그대로(`regression-answers.test.ts`와 같은 요청), 한 줄 정답(company·metric·period)은 회귀 엔진 `valueFromFinancials`(`tests/regression/engine.ts`). `synthetic`·계산식 정답은 건너뛴다.
+- **"접수번호 바뀜(정정 공시?)"**이 보이면 그 보고서에 정정 공시가 나온 것이다 → 전자공시에서 새 접수번호로 원문을 열어 숫자를 다시 손으로 확인한다 (§7 "정정 공시").
+- 2026-10-01 실행: 정답 19개·숫자 36개 모두 같음.
+
+### 11/15 이후 시연이면 — 새 정답 만드는 순서
+3분기보고서 제출 기한(11/14)이 지나면 "최신 분기"가 2026Q3가 되어 "최근 실적" 같은 질문의 기간이 바뀐다(`latestAvailableQuarter`).
+1. 11/15 이후 `node scripts/refresh-answers.mjs --to 2026Q3`로 새 값 표를 본다. 아직 3분기보고서를 안 낸 기업은 `NO_REPORT` — 그런 기업이 있으면 며칠 뒤 다시.
+2. `--json > new-answers.json`으로 후보를 받는다. 후보에는 옮긴 기간·숫자 이름("영업이익 2026Q3")·질문 속 분기("3분기")·`rceptNo`(계산에 쓴 보고서 전부, 증감률용 앞 분기 포함)가 들어 있다. 주가 정답은 그날 최근 거래일 종가로 바뀐다(`now`·`priceDate`).
+3. **후보를 그대로 붙이지 않는다** — 새 3분기보고서 접수번호로 원문을 열어 매출·영업이익·순이익 3개월 값을 손으로 확인하고(§2 방식), 맞으면 `answers/*.json`의 키를 새 분기 이름으로 바꿔 넣는다(예: `recent_2026q2` → `recent_2026q3`). 회귀 케이스(`tests/regression/cases`, 현준)의 `answerRef`도 함께 바꾼다.
+4. `pnpm exec vitest run tests/accuracy/regression-answers.test.ts`(fixture 기준)와 회귀 세트가 새 정답 기준으로 통과하는지 확인한다 — 새 분기 원문을 `tests/accuracy/fixtures/`에 옮겨야 엔진 대조가 된다.

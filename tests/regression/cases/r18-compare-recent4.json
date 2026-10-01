@@ -1,0 +1,14 @@
+{
+  "id": "r18-compare-recent4",
+  "title": "정상 — 두 회사 최근 4분기 비교 (group_by quarter)",
+  "question": "삼성전자와 SK하이닉스 최근 4분기 영업이익 비교해줘",
+  "kind": "normal",
+  "expect": {
+    "metrics": ["operating_income"],
+    "period": {
+      "from": "2025Q3",
+      "to": "2026Q2"
+    },
+    "answerRef": "answers/samsung.json#operating_income-2026Q2"
+  }
+}

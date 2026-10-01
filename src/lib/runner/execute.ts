@@ -5,7 +5,7 @@
 // WU-203: 계산 전에 전처리 진단을 만들고, 확인이 필요하면 멈춰서 선택을 받은 뒤 계산한다.
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AnalysisRequestView, Diagnosis, Quarter, ResultObject } from "@/contracts";
+import type { AnalysisRequestView, Diagnosis, Quarter, ResultObject, Series } from "@/contracts";
 import type { FsDiv } from "@/lib/financials/types";
 import { CALC_VERSION } from "@/lib/metrics/types";
 import { ensureOfsReport } from "@/lib/preprocess/ofs";
@@ -48,6 +48,7 @@ import {
 import {
   buildAnnualSeries,
   buildCompanyComparisonSeries,
+  buildMultiCompanyPeriodSeries,
   comparisonQuarter,
   buildQuarterlySeries,
   buildSumSeries,
@@ -338,6 +339,11 @@ interface BuildResultInput {
   valuation?: PreparedValuation | null;
 }
 
+/** 여러 기업 분기·연도별 표의 행: 어느 기업에든 있는 분기(연도) — "2025Q3"·"2025"는 글자 순서가 곧 시간 순서 */
+function periodRowKeys(series: readonly Series[]): string[] {
+  return [...new Set(series.flatMap((s) => s.points.map((p) => p.x)))].sort();
+}
+
 /** 계산된 재무 값으로 차트·표·숫자 ID를 만든다 (WU-110) */
 async function buildResult(
   fullRequest: AnalysisRequestView,
@@ -361,7 +367,7 @@ async function buildResult(
   const commonQuarters = input.requestedQuarters.filter((q) =>
     companies.every((c) => !input.excludedByCorp.get(c.corpCode)?.has(q)),
   );
-  // 분기·연도별은 대상 기업만 보여 주므로 대상 기업이 뺀 분기만 뺀다
+  // 분기·연도별(기업 하나)은 대상 기업만 보여 주므로 대상 기업이 뺀 분기만 뺀다
   const requestedQuarters = allowedFor(request.target.corpCode);
 
   const targetFinancials = financialsByCorp.get(request.target.corpCode)!;
@@ -392,26 +398,40 @@ async function buildResult(
   const comparison = isComparison
     ? buildCompanyComparisonSeries(samples, comparisonQuarters(), request.metrics, allocator)
     : null;
+  // 질문에 기업이 여럿인 분기·연도별 ("삼성전자와 SK하이닉스 최근 4분기 영업이익 비교해줘" — AI가 group_by를
+  // "quarter"로 줄 때가 있다): 기업마다 선 하나씩. 보드에서 비교 기업을 넣은 경우는 아래 기업 비교 막대(WU-401)
+  const multiCompany =
+    !isSum && !isComparison && companies.length > 1 && !input.peerComparisonChart
+      ? buildMultiCompanyPeriodSeries(
+          samples,
+          allowedFor,
+          request.metrics,
+          allocator,
+          request.groupBy === "year",
+        )
+      : null;
 
   const { series, reportsUsed } = sumResult
     ? sumResult
     : comparison
       ? comparison
-      : request.groupBy === "year"
-        ? buildAnnualSeries(
-            targetFinancials,
-            targetFsDiv,
-            requestedQuarters,
-            request.metrics,
-            allocator,
-          )
-        : buildQuarterlySeries(
-            targetFinancials,
-            targetFsDiv,
-            requestedQuarters,
-            request.metrics,
-            allocator,
-          );
+      : multiCompany
+        ? multiCompany
+        : request.groupBy === "year"
+          ? buildAnnualSeries(
+              targetFinancials,
+              targetFsDiv,
+              requestedQuarters,
+              request.metrics,
+              allocator,
+            )
+          : buildQuarterlySeries(
+              targetFinancials,
+              targetFsDiv,
+              requestedQuarters,
+              request.metrics,
+              allocator,
+            );
 
   const charts = buildCharts(
     request,
@@ -422,7 +442,9 @@ async function buildResult(
       ? sumChartOptions(request, companies, periods.length, sumResult.excluded)
       : comparison
         ? comparisonChartOptions(comparison)
-        : undefined,
+        : multiCompany
+          ? { type: "line", footnotes: [], subject: companies.map((c) => c.name).join("·") }
+          : undefined,
   );
 
   // 보드에서 비교 기업을 넣은 분기·연도별 결과 (WU-401): 원래 차트는 대상 기업 그대로 두고 기업 비교 막대를 더한다
@@ -470,9 +492,10 @@ async function buildResult(
   if (isSum)
     basis.flags.push(`합계: ${companies.map((c) => c.name).join("·")} ${companies.length}곳`);
   // 여러 기업을 나란히 놓거나 더할 때 금융사가 섞이면 매출·영업이익률을 공통 지표로 바꿔 읽는다 (TECH §7).
-  // 분기·연도별은 대상 기업만 보여 주므로 붙이지 않는다
+  // 기업 하나의 분기·연도별은 붙이지 않는다
   const mixesFinancial =
-    shownComparison?.hasFinancial ?? (isSum && samples.some((s) => s.company.sector.isFinancial));
+    shownComparison?.hasFinancial ??
+    ((isSum || multiCompany !== null) && samples.some((s) => s.company.sector.isFinancial));
   if (companies.length > 1 && mixesFinancial) basis.flags.push(FINANCIAL_CONVERSION_FLAG);
   if (shownComparison) {
     basis.flags.push(
@@ -495,9 +518,11 @@ async function buildResult(
     ? periods.map((p) => p.x)
     : comparison
       ? comparison.rowKeys
-      : request.groupBy === "year"
-        ? [...new Set(requestedQuarters.map((q) => `${parseQuarter(q).year}`))]
-        : requestedQuarters;
+      : multiCompany
+        ? periodRowKeys(multiCompany.series)
+        : request.groupBy === "year"
+          ? [...new Set(requestedQuarters.map((q) => `${parseQuarter(q).year}`))]
+          : requestedQuarters;
 
   const rowLabelColumn = isSum
     ? sumByYear

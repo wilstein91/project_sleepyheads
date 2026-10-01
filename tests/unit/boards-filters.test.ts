@@ -34,14 +34,14 @@ describe("parseBoardFilters", () => {
       parseBoardFilters(
         {
           filters: {
-            period: { from: "2015Q1", to: "2026Q2" },
+            period: { from: "2016Q1", to: "2026Q2" },
             peers: ["005930", "000660", "005930"],
           },
         },
         TARGET.stockCode,
         "2026Q2",
       ),
-    ).toEqual({ period: { from: "2015Q1", to: "2026Q2" }, peers: ["005930"] });
+    ).toEqual({ period: { from: "2016Q1", to: "2026Q2" }, peers: ["005930"] });
   });
 
   it.each([
@@ -50,11 +50,26 @@ describe("parseBoardFilters", () => {
     [{ filters: { peers: "005930" } }, "VALIDATION_ERROR"],
     [{ filters: { period: { from: "2026Q1" } } }, "VALIDATION_ERROR"],
     [{ filters: { period: { from: "2026Q1", to: "2025Q1" } } }, "VALIDATION_ERROR"],
-    [{ filters: { period: { from: "2014Q4", to: "2025Q1" } } }, "OUT_OF_RANGE"],
+    [{ filters: { period: { from: "2015Q4", to: "2025Q1" } } }, "OUT_OF_RANGE"],
     [{ filters: { period: { from: "2026Q1", to: "2026Q3" } } }, "OUT_OF_RANGE"],
   ])("%j → %s", (body, code) => {
     expect(() => parseBoardFilters(body, TARGET.stockCode, "2026Q2")).toThrow(
       expect.objectContaining({ code }),
+    );
+  });
+
+  it("범위 밖 422 문구는 조회 시작 분기(2016년 1분기)와 최신 분기를 알려 준다", () => {
+    expect(() =>
+      parseBoardFilters(
+        { filters: { period: { from: "2015Q1", to: "2025Q1" } } },
+        TARGET.stockCode,
+        "2026Q2",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "OUT_OF_RANGE",
+        message: "조회할 수 있는 기간은 2016년 1분기부터 최신 보고서(2026Q2)까지입니다.",
+      }),
     );
   });
 });

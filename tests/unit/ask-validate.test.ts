@@ -248,5 +248,6 @@ describe("validateAnalysisRequest (TECH §4.5)", () => {
       { client },
     );
     expect(result.type).toBe("out_of_range");
+    if (result.type === "out_of_range") expect(result.message).toContain("2016년 1분기");
   });
 });

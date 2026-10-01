@@ -11,6 +11,7 @@ import {
   saveBoard,
   toBoardView,
 } from "@/lib/boards";
+import { carryReport } from "@/lib/report/carry";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { SessionClient } from "@/lib/supabase/server";
 
@@ -93,6 +94,9 @@ export const PATCH = route({ access: "member" }, async (ctx) => {
     },
     admin,
   );
+
+  // 투자 리포트는 원래 분석 것을 그대로 (보드 필터는 질문 차트만 다시 계산한다 — Phase 5 후속)
+  carryReport(analysis.result, result);
 
   await saveBoard(admin, {
     analysisId: analysis.id,

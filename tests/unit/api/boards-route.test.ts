@@ -391,7 +391,7 @@ describe("B2 PATCH /api/boards/:id", () => {
   });
 
   it.each([
-    ["2015Q1 이전", { from: "2014Q4", to: "2016Q1" }],
+    ["2016Q1 이전", { from: "2015Q4", to: "2016Q2" }],
     ["최신 분기 이후", { from: "2025Q1", to: "2099Q4" }],
   ])("기간 %s → 422 OUT_OF_RANGE, 계산 없음", async (_name, period) => {
     const res = await patch({ filters: { period } });
@@ -407,7 +407,7 @@ describe("B2 PATCH /api/boards/:id", () => {
     spy.mockImplementationOnce(() => {
       throw new HttpError("TOO_LARGE", "기간이나 비교 기업 수를 줄여 주세요.");
     });
-    const res = await patch({ filters: { period: { from: "2015Q1", to: "2026Q2" } } });
+    const res = await patch({ filters: { period: { from: "2016Q1", to: "2026Q2" } } });
     expect(res.status).toBe(413);
     // 문구 뒤에 예시가 붙을 수 있어 통째로 비교하지 않는다 — 코드 + "줄여"만
     const { error } = (await res.json()) as { error: { code: string; message: string } };
@@ -415,8 +415,8 @@ describe("B2 PATCH /api/boards/:id", () => {
     expect(error.message).toContain("줄여");
     expect(state.runs).toEqual([]);
     expect(state.saved).toEqual([]);
-    // 한도 함수에 넘긴 크기: 기업 1곳 × (46분기 + 증감률용 4분기) × 원자료 계정 8개
-    expect(spy).toHaveBeenCalledWith({ companies: 1, quarters: 50, accounts: 8 });
+    // 한도 함수에 넘긴 크기: 기업 1곳 × (42분기 + 증감률용 4분기) × 원자료 계정 8개
+    expect(spy).toHaveBeenCalledWith({ companies: 1, quarters: 46, accounts: 8 });
     spy.mockRestore();
   });
 

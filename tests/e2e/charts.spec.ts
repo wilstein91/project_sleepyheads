@@ -163,8 +163,10 @@ test.describe("재무 용어 설명", () => {
     await expect(page.getByRole("button", { name: "연결", exact: true }).first()).toBeVisible();
 
     await page.getByText("사용된 데이터", { exact: true }).click();
+    // 투자 리포트 표에도 같은 열이 있어 "사용된 데이터" 안에서만 찾는다 (Phase 5 후속)
+    const usedData = page.locator("details", { hasText: "사용된 데이터" });
     await expect(
-      page.getByRole("columnheader", { name: "영업이익률" }).getByRole("button"),
+      usedData.getByRole("columnheader", { name: "영업이익률" }).getByRole("button"),
     ).toHaveAccessibleDescription(/100원어치/);
   });
 });

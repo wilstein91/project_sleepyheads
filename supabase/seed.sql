@@ -18,7 +18,7 @@ insert into quota_config (key, value, description) values
   ('max_steps_per_question', 8, '질문당 최대 실행 단계 수'),
   ('max_retries_per_step', 2, '단계당 재시도 횟수 (외부 API 오류·시간 초과만)'),
   ('max_seconds_per_question', 90, '질문당 최대 실행 시간(초)'),
-  ('max_llm_cost_usd_per_question', 0.03, '질문당 AI 비용 상한(USD) — 분석 글 gpt-6-sol(T4)'),
+  ('max_llm_cost_usd_per_question', 0.10, '질문당 AI 비용 상한(USD) — 분석 글 gpt-6-sol(T4) + 투자 리포트'),
   ('max_news_search_calls', 3, '질문당 뉴스 검색 호출 상한'),
   ('max_news_bodies', 5, '질문당 뉴스 본문 확인 상한');
 

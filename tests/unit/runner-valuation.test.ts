@@ -13,8 +13,13 @@ const { dartFetchMock, priceFetchMock } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/dart/client", () => ({ dartFetch: dartFetchMock }));
 vi.mock("@/lib/price/client", () => ({ priceFetch: priceFetchMock }));
+// Phase 5: 분석 글(현준 explain/**)이 PER·PBR 숫자를 자리표시자로 쓰는지 — 가짜 AI로만 확인한다
+const { llmCallMock } = vi.hoisted(() => ({ llmCallMock: vi.fn() }));
+vi.mock("@/lib/llm/client", () => ({ llmCall: llmCallMock }));
+vi.mock("@/lib/explain/model", () => ({ chooseExplainModel: async () => ({ model: "fake" }) }));
 
 const { runAnalysis } = await import("@/lib/runner/execute");
+const { generateExplanationWithUsage } = await import("@/lib/explain/generate");
 const { buildResult } = await import("@/lib/runner/tools/data-tools");
 
 const JO = 1_000_000_000_000;
@@ -363,7 +368,10 @@ describe("build_result 실행 기록", () => {
     expect(outcome.outputSummary).toContain(
       "주가 결합: 재무 1행 + 주가 2행 → 1행, 제외 1행(우선주 1), 기준일 2024-12-30, 주가 호출 1건",
     );
-    expect(outcome.usage).toEqual({ externalCalls: 1, llmCostUsd: 0 });
+    // 외부 호출 = 주가 결합 1건 + 투자 리포트가 받은 것 (리포트 요약 줄에 따로 센다, Phase 5 후속). AI 0
+    expect(outcome.outputSummary).toMatch(/투자 리포트: .*외부 호출 (\d+)건/);
+    const reportCalls = Number(/투자 리포트: .*외부 호출 (\d+)건/.exec(outcome.outputSummary)![1]);
+    expect(outcome.usage).toEqual({ externalCalls: 1 + reportCalls, llmCostUsd: 0 });
   });
 });
 
@@ -386,5 +394,100 @@ describe("기업 재무를 함께 받는다 (Phase 3 후속: 보드 B2 새 비�
     );
     expect(outcome.kind).toBe("done");
     expect(overlapped).toBe(true);
+  });
+});
+
+describe("분석 글이 주가 지표 숫자(TIMES)를 자리표시자로 쓴다 (Phase 5 확인, 가짜 AI)", () => {
+  async function valuationResult(stockCode = "000660", target = SK) {
+    mockPrices([
+      priceItem(stockCode, "20250414", stockCode === "000660" ? 180_000 : 1_000, 10_000_000),
+    ]);
+    const outcome = await runAnalysis(request({ target }), { client: db().client, now: NOW });
+    if (outcome.kind !== "done") throw new Error(outcome.kind);
+    const card = outcome.result.charts[0];
+    const idOf = (key: string) => card.series.find((s) => s.key === key)!.points[0].figureId;
+    return { result: outcome.result, per: idOf("per"), pbr: idOf("pbr"), cap: idOf("market_cap") };
+  }
+
+  function aiSays(conclusion: string[], insights: { text: string; figure_ids: string[] }[] = []) {
+    llmCallMock.mockResolvedValue({
+      output: {
+        conclusion,
+        insights: insights.map((i) => ({
+          kind: "watch",
+          news_ids: [],
+          chart_ref: "c1",
+          inferred: false,
+          ...i,
+        })),
+        evidence: [],
+        news_clues: [],
+        caveats: [],
+      },
+    });
+  }
+
+  beforeEach(() => llmCallMock.mockReset());
+
+  it("AI가 받는 숫자 목록에 PER·PBR이 표시 글자('…배') 그대로 있다 — 숫자를 지어낼 필요가 없다", async () => {
+    const { result, per, pbr } = await valuationResult();
+    aiSays(["PER을 확인했습니다."]);
+    await generateExplanationWithUsage({
+      question: "SK하이닉스 PER 알려줘",
+      result,
+      mixedScope: false,
+    });
+    const prompt = JSON.stringify(llmCallMock.mock.calls[0][0].input);
+    expect(prompt).toContain(result.figures[per].display);
+    expect(prompt).toContain(result.figures[pbr].display);
+    expect(result.figures[per].display).toMatch(/^\d+\.\d{2}배$/);
+  });
+
+  it("{{PER}} 자리표시자는 서버가 '…배'로 채운다 (결론·투자 포인트)", async () => {
+    const { result, per, pbr } = await valuationResult();
+    aiSays(
+      [`SK하이닉스의 PER은 {{${per}}}, PBR은 {{${pbr}}}입니다.`],
+      [
+        {
+          text: `이익 대비 주가 수준(PER {{${per}}})을 같은 업종과 견줘 볼 만합니다.`,
+          figure_ids: [per],
+        },
+      ],
+    );
+    const { explanation } = await generateExplanationWithUsage({
+      question: "SK하이닉스 PER 알려줘",
+      result,
+      mixedScope: false,
+    });
+    expect(explanation.conclusion[0]).toBe(
+      `SK하이닉스의 PER은 ${result.figures[per].display}, PBR은 ${result.figures[pbr].display}입니다.`,
+    );
+    expect(explanation.insights[0].text).toContain(`PER ${result.figures[per].display})`);
+  });
+
+  it("AI가 PER 숫자를 직접 쓰면(자리표시자 아님) 그 문장은 버린다", async () => {
+    const { result, per } = await valuationResult();
+    aiSays([`PER은 13배 수준입니다.`, `PER은 {{${per}}}입니다.`]);
+    const { explanation } = await generateExplanationWithUsage({
+      question: "SK하이닉스 PER 알려줘",
+      result,
+      mixedScope: false,
+    });
+    expect(explanation.conclusion).toEqual([`PER은 ${result.figures[per].display}입니다.`]);
+  });
+
+  it("적자 PER('적자')·자본잠식 PBR을 가리키는 문장은 지금 버려진다 (값이 null — 다른 트랙에 알림)", async () => {
+    const { result, per, pbr } = await valuationResult("900090", LOSS);
+    expect([result.figures[per].display, result.figures[pbr].display]).toEqual([
+      "적자",
+      "자본잠식",
+    ]);
+    aiSays([`가상적자는 PER이 {{${per}}}입니다.`, "이익이 나지 않아 PER을 계산할 수 없습니다."]);
+    const { explanation } = await generateExplanationWithUsage({
+      question: "가상적자 PER 알려줘",
+      result,
+      mixedScope: false,
+    });
+    expect(explanation.conclusion).toEqual(["이익이 나지 않아 PER을 계산할 수 없습니다."]);
   });
 });

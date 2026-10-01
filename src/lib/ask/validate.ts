@@ -6,6 +6,7 @@ import { resolveCompany } from "@/lib/companies/resolve";
 import { METRIC_LABEL } from "@/lib/runner/metric-info";
 import type { AiAnalysisRequest } from "./ai-request";
 import { resolvePeriod } from "./period";
+import { EARLIEST_QUARTER_LABEL } from "./quarter";
 
 /** 지원하는 지표 (TECH §6.4). 시가총액·PER·PBR은 주가 결합(WU-502, Step 5)으로 계산한다. */
 const SUPPORTED_METRICS: readonly MetricId[] = [
@@ -141,8 +142,7 @@ export async function finishValidation(
   if (!periodResult.ok) {
     return {
       type: "out_of_range",
-      message:
-        "조회 가능한 기간(2015년 1분기~최신 보고서)을 벗어났습니다. 기간을 좁혀 다시 질문해 주세요.",
+      message: `조회 가능한 기간(${EARLIEST_QUARTER_LABEL}~최신 보고서)을 벗어났습니다. 기간을 좁혀 다시 질문해 주세요.`,
     };
   }
 

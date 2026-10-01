@@ -29,6 +29,22 @@ function looksLikeCausalClaim(text: string): boolean {
   return CAUSAL_KEYWORDS.some((kw) => claim.includes(kw));
 }
 
+/**
+ * 추론임을 드러내는 표현 (2026-10-01 예림 결정): 주어진 자료(API 숫자·뉴스 RSS) 안에서 추론해도 되지만,
+ * 원인·전망을 말하는 문장은 반드시 "~로 예상됩니다·보입니다·추정됩니다·가능성이 있습니다"처럼 추론임을 밝힌다.
+ */
+const HEDGE_RE =
+  /(예상됩니다|예상된다|예상돼|보입니다|보인다|보여|추정됩니다|추정된다|추정돼|가능성이|가능성도|풀이됩니다|해석됩니다|짐작됩니다|여겨집니다|전망됩니다)/;
+export function isHedged(text: string): boolean {
+  return HEDGE_RE.test(text);
+}
+
+/** 원인·전망 문장 검사: 추론 표현이 있어야 하고 근거(숫자 또는 뉴스)가 있어야 남는다. 남으면 추론 문장이다 */
+function inferenceCheck(text: string, hasGround: boolean): { keep: boolean; inferred: boolean } {
+  if (!looksLikeCausalClaim(text)) return { keep: true, inferred: isHedged(text) };
+  return { keep: hasGround && isHedged(text), inferred: true };
+}
+
 /** 권유 금지어(§11.5) 또는 링크 주소·비밀 값(WU-504 주입 방어)이 든 문장은 버린다 */
 function rejected(text: string): boolean {
   return containsBannedWord(text) || containsLeak(text);
@@ -81,7 +97,7 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
     .filter((id) => filingById.has(id));
   const conclusionSources = citedNewsIds.length + citedFilingIds.length;
 
-  // 결론은 앞에서부터 최대 2문장, 합계가 한 화면 분량(320자)을 넘지 않게 (§11.5, EXPLANATION_LIMITS)
+  // 결론은 앞에서부터 최대 conclusionSentences문장, 합계가 mainMaxChars를 넘지 않게 (§11.5, EXPLANATION_LIMITS)
   const conclusion: string[] = [];
   let conclusionChars = 0;
   let conclusionUsesNews = false;
@@ -89,9 +105,10 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
     if (conclusion.length >= EXPLANATION_LIMITS.conclusionSentences) break;
     const text = resolveText(raw, input.figures);
     if (text === null || rejected(text)) continue;
-    // 결론도 뉴스 근거 없이 원인을 단정하지 않는다 (투자 포인트와 같은 검사, TECH §11.5)
+    // 결론의 원인 문장도 추론 표현이 있어야 남는다 — 근거는 결과·리포트 숫자 자체 (TECH §11.5, 2026-10-01 개정)
     const causal = looksLikeCausalClaim(text);
-    if (causal && conclusionSources === 0) continue;
+    // 공시 원문을 인용한 결론은 회사가 직접 밝힌 설명이라 추론 표현 없이도 남는다
+    if (causal && !isHedged(text) && conclusionSources === 0) continue;
     if (conclusionChars + text.length > EXPLANATION_LIMITS.mainMaxChars) continue;
     if (causal) conclusionUsesNews = true;
     conclusion.push(text);
@@ -112,21 +129,30 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
     const newsIds = input.hasNews ? raw.news_ids.filter((id) => newsClueById.has(id)) : [];
     const filingIds = (raw.filing_ids ?? []).filter((id) => filingById.has(id));
     if (figureIds.length === 0 && newsIds.length === 0 && filingIds.length === 0) continue; // 근거 연결 검사
-    // 원인 추정엔 뉴스·공시 원문 근거 필수 — `inferred` 자가 신고 여부와 무관하게 문장 자체를 검사(우회 방지)
-    if (newsIds.length === 0 && filingIds.length === 0 && looksLikeCausalClaim(text)) continue;
+    // 원인·전망 추론은 근거(숫자·뉴스) + 추론 표현이 있어야 남는다 — `inferred` 자가 신고와 무관하게 문장 자체를 검사(우회 방지).
+    // 공시 원문을 근거로 단 원인 문장은 회사가 보고서에 직접 쓴 설명이라 추론 표현 없이도 남는다.
+    // AI가 추론이라고 밝힌(inferred) 문장도 추론 표현이 없으면 버린다
+    const check =
+      filingIds.length > 0 && looksLikeCausalClaim(text)
+        ? { keep: true, inferred: isHedged(text) }
+        : inferenceCheck(text, figureIds.length + newsIds.length > 0);
+    if (!check.keep) continue;
+    if (raw.inferred && !isHedged(text)) continue;
 
     insights.push({
       kind: raw.kind,
+      theme: raw.theme ?? "general",
       text,
       figureIds,
       newsIds,
       filingIds,
       chartRef: chartRefOrNull(raw.chart_ref, chartIds),
-      inferred: raw.inferred,
+      // 추론 표현이 있으면 화면에 "(추정)" 표시
+      inferred: raw.inferred || check.inferred,
     });
   }
 
-  // 분량 검사(§11.5): 결론+투자 포인트 합계 320자 초과 → 뒤쪽 투자 포인트부터 폐기.
+  // 분량 검사(§11.5): 결론+투자 포인트 합계가 mainMaxChars를 넘으면 뒤쪽 투자 포인트부터 폐기.
   let totalChars = conclusionChars;
   const keptInsights: Insight[] = [];
   for (const insight of insights) {

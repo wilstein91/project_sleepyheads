@@ -72,10 +72,15 @@ describe("resolvePeriod (TECH §4.3)", () => {
       ok: false,
       code: "OUT_OF_RANGE",
     });
-    // 2015Q1 하나면 앞 분기가 범위 밖이라 잘린다
-    expect(resolvePeriod({ specified: true, text: "2015년 1분기" }, "cause", LATEST)).toMatchObject(
-      { ok: true, period: { from: "2015Q1", to: "2015Q1", clipped: true } },
+    // 2016Q1(조회 시작 분기) 하나면 앞 분기가 범위 밖이라 잘린다
+    expect(resolvePeriod({ specified: true, text: "2016년 1분기" }, "cause", LATEST)).toMatchObject(
+      { ok: true, period: { from: "2016Q1", to: "2016Q1", clipped: true } },
     );
+    // 2015년 분기는 OpenDART에 분기보고서가 없어 조회 범위 밖 (Phase 5, EARLIEST_QUARTER 2016Q1)
+    expect(resolvePeriod({ specified: true, text: "2015년 1분기" }, "cause", LATEST)).toEqual({
+      ok: false,
+      code: "OUT_OF_RANGE",
+    });
   });
 
   it("'2013년 매출' → OUT_OF_RANGE", () => {

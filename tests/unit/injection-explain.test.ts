@@ -168,8 +168,8 @@ describe("③ 설명 작성 — 기사·공시 속 명령문 (WU-504)", () => {
     await generateExplanationWithUsage(input);
     const [request] = llm.requests;
     expect(Object.keys(request).sort()).toEqual(
-      // reasoningEffort = 추론 분량(속도, src/lib/explain/reasoning.ts) — 도구 칸이 아니다
-      ["analysisId", "input", "model", "reasoningEffort", "schema", "userId"].sort(),
+      // reasoningEffort = 추론 분량(속도, src/lib/explain/reasoning.ts)·timeoutMs — 도구 칸이 아니다
+      ["analysisId", "input", "model", "reasoningEffort", "schema", "timeoutMs", "userId"].sort(),
     );
     expect(JSON.stringify(request)).not.toMatch(/"tools"|"tool_choice"|"functions"/);
     // 출력은 JSON 스키마로만 (Structured Outputs, strict)
@@ -180,8 +180,8 @@ describe("③ 설명 작성 — 기사·공시 속 명령문 (WU-504)", () => {
     const { explanation } = await generateExplanationWithUsage(input);
     expect(explanation.status).toBe("ready");
     expect(explanation.conclusion).toEqual([
-      "2026년 2분기 매출은 28조 원로 4개 분기 중 가장 컸습니다.",
-      "영업이익도 13조 9,000억 원로 늘어 수익성이 함께 좋아졌습니다.",
+      "2026년 2분기 매출은 28조 원으로 4개 분기 중 가장 컸습니다.",
+      "영업이익도 13조 9,000억 원으로 늘어 수익성이 함께 좋아졌습니다.",
     ]);
     expect(explanation.insights.map((i) => i.text)).toEqual([
       "영업이익률 49.6%로 매출의 절반 가까이를 이익으로 남기는 구간입니다.",

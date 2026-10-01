@@ -24,8 +24,8 @@ test("지표 카드에 시가총액·PER·PBR과 주가 기준일이 보인다",
     await expect(cell).toContainText(value);
     await expect(cell).toContainText("기준일 9월 30일 종가");
   }
-  // 분석 기준 바에도 주가 기준일
-  await expect(page.getByText("2026-09-30 종가", { exact: true })).toBeVisible();
+  // 분석 기준 바에도 주가 기준일 (투자 리포트에도 같은 글자가 있어 첫 번째 = 분석 기준 바)
+  await expect(page.getByText("2026-09-30 종가", { exact: true }).first()).toBeVisible();
 });
 
 test("ⓘ를 누르면 TECH §6.4와 같은 계산식이 뜨고, Esc로 닫힌다", async ({ page }) => {

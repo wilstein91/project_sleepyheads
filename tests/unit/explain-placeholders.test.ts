@@ -78,3 +78,35 @@ describe("resolveText", () => {
     expect(resolveText("영업이익이 9조 원 늘었습니다.", FIGURES)).toBeNull();
   });
 });
+
+describe("자리표시자 뒤 조사 (투자 리포트, Phase 5 후속)", () => {
+  const fig = (id: string, display: string, value: number | null = 1) =>
+    ({ id, label: id, value, unit: "KRW", display, basis: { report: "", fsDiv: "CFS" } }) as const;
+  const F = {
+    f1: fig("f1", "89조 4,924억 원"),
+    f2: fig("f2", "8.01배"),
+    f3: fig("f3", "76.33%"),
+    f4: fig("f4", "1,776,000원"),
+    f5: fig("f5", "+557.2%"),
+    f6: fig("f6", "62,044"),
+  };
+
+  it.each([
+    ["{{f1}}가 앞선다", "89조 4,924억 원이 앞선다"],
+    ["{{f2}}은 낮다", "8.01배는 낮다"],
+    ["{{f3}}과 ROE", "76.33%와 ROE"],
+    ["{{f4}}를 넘었다", "1,776,000원을 넘었다"],
+    ["{{f5}}로 늘었다", "+557.2%로 늘었다"],
+    ["{{f1}}로 늘었다", "89조 4,924억 원으로 늘었다"],
+    ["EPS는 {{f6}}이다", "EPS는 62,044이다"],
+  ])("%s → %s", (raw, want) => {
+    expect(fillPlaceholders(raw, F).text).toBe(want);
+  });
+
+  it('조사가 아닌 낱말이 바로 붙어도 값은 채운다 ("{{f2}}이며")', () => {
+    expect(fillPlaceholders("PER {{f2}}이며 낮다", F)).toEqual({
+      text: "PER 8.01배이며 낮다",
+      ok: true,
+    });
+  });
+});

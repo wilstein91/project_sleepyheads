@@ -1,6 +1,6 @@
 {
   "id": "r11-out-of-period",
-  "title": "기간 밖 — 2015년 1분기 이전",
+  "title": "기간 밖 — 조회 시작 분기(2016년 1분기) 이전",
   "question": "삼성전자 2013년 매출 알려줘",
   "kind": "error",
   "expect": {

@@ -24,6 +24,8 @@
 | v0.3.4 | 2026-09-30 | WU-115 비로그인 예시: G1 응답 타입 `GuestExample`·예시가 아직 없으면 `404`, C2 `?force=1`(관리자 수동 재생성)·새 보고서 판정(정기공시 목록 1회)·최대 실행 시간 120초 → 300초 |
 | v0.3.5 | 2026-09-30 | PR #19 리뷰 후속: `/auth/callback`(A1)은 분당 요청 제한에서 제외(§1.6), Q1 같은 멱등키 재요청은 차감 뒤 2분이 지나도 분석이 없으면 409 대신 다시 처리 |
 | v0.3.6 | 2026-09-30 | WU-003 결정: Supabase 프로젝트를 **`sleepyhead` 하나로 유지**(로컬·Preview·운영 공용, §1.1·§7.1·§8.3), 운영·Preview 주소 확정, 마이그레이션 적용 순서(§7.6) — GitHub 연결로 자동 적용되지 않음 |
+| v0.4.1 | 2026-10-01 | `EXPLANATION_LIMITS` 결론 최대 15문장·투자 포인트 160자·합계 3,500자. `Insight.inferred`는 추론 표현이 있는 원인·전망 문장이면 서버가 true로 맞춘다 |
+| v0.4.0 | 2026-10-01 | **투자 리포트**: `ResultObject.report?: CompanyReport`(기본정보·주가·재무·밸류에이션·공시, TECH §12.6). 분석 글 `Insight.theme?`(성장성·수익성·재무 안정성·밸류에이션·주가 흐름·이슈·종합), `EXPLANATION_LIMITS` 결론 최대 5문장·투자 포인트 최대 8개·130자·합계 1,300자 |
 | v0.3.7 | 2026-09-30 | **합계**(PRD F-N3): `AnalysisRequestView.aggregate?: "sum"` — 질문에 나온 기업들의 흐름 지표를 분기마다 더함(섹터별 가능, Step 1은 질문에 나온 기업 범위만). 증감률(YoY·QoQ)이 이익 지표에서 부호가 바뀌면 `value: null` + `reason` 없음 + `display`에 `흑자전환`·`적자전환`·`적자지속` (TECH §6.4). WU-199: 계산 불가 사유 `NO_REPORT`(그 분기 보고서가 전자공시에 없음, 013) 추가 — `MISSING_ACCOUNT`(보고서는 있는데 계정 값 없음)와 구분. Q1 비교 기업이 5곳을 넘으면 `413 TOO_LARGE`(조용히 자르지 않음, 질문 1회 사용) |
 
 > 화면(브라우저)과 서버가 주고받는 모든 약속을 이 문서 하나에 모았다. **API를 바꿀 때는 이 문서를 먼저 고치고** PR에서 관련 역할의 확인을 받는다 (HANDOFF §5).
@@ -320,10 +322,30 @@ interface DataBasis {              // 분석 기준 바
 
 interface ResultObject {
   basis: DataBasis;
-  figures: Record<string, Figure>; // id → Figure
+  figures: Record<string, Figure>; // id → Figure (투자 리포트 숫자는 f100001부터)
   charts: Chart[];
   disclosures: Disclosure[];
   usedData: UsedData;
+  report?: CompanyReport; // 투자 리포트 (기업 하나가 대상인 분석, TECH §12.6) — 옛 분석·비로그인 예시에는 없을 수 있다
+}
+
+interface ReportFact { label: string; figureId?: string; text?: string; note?: string }
+interface ReportSection {
+  id: "profile" | "price" | "financials" | "valuation" | "events";
+  title: string;
+  facts: ReportFact[];
+  charts: Chart[]; // ID "r1"…
+  notes: string[];
+}
+interface CompanyReport {
+  company: CompanyRef;
+  asOf: string; // 만든 시각 ISO
+  priceDate: string | null;
+  highlights: ReportFact[]; // 맨 위 핵심 지표
+  sections: ReportSection[];
+  keyFigureIds: string[]; // 분석 글 AI에 넘기는 숫자
+  disclosures: Disclosure[]; // 최근 12개월 중요 공시
+  notes: string[]; // 받지 못한 부분
 }
 ```
 
@@ -789,6 +811,7 @@ interface Analysis {
 ### C3 `GET /api/cron/prefill-profiles` ⚙️ (Phase 4, 예림)
 - 하루 1회(C1 30분 뒤, `vercel.json`). **기업개황 미리 채우기**: 개황(시장·결산월·섹터)이 없는 상장사를 `corp_code` 순으로 하루 최대 **1,000곳** 채운다 — 입력창 자동완성(S1)은 개황이 있는 기업만 보여 준다(HANDOFF §0.4).
 - 전자공시 한도: 회원 soft limit(`dart_global_soft_limit`)의 **1/4에서 오늘 쓴 호출을 뺀 만큼만** 쓴다. 한도(`QuotaExceeded`)에 걸리면 더 부르지 않고 성공으로 끝난다(다음 날 이어서). 실패한 기업은 건너뛰고 센다.
+- (Phase 5) OpenDART가 개황을 주지 않은 기업(013 — 폐지 등)은 `companies.profile_failed_at`에 시각을 남기고 **7일 동안 건너뛴다**. 네트워크·키·DB 오류는 남기지 않는다(다음 실행에 다시). `remaining`은 건너뛰는 기업을 세지 않는다. 회원 질문의 기업개황 조회는 이 칸을 보지 않는다. 칸이 없으면(마이그레이션 전) 예전처럼 동작
 - 함수 최대 실행 시간: 300초 (240초가 지나면 새 기업을 시작하지 않는다)
 
 응답 `200` → `{ "data": { "filled": 1000, "failed": 2, "remaining": true, "stoppedBy": "batch", "budget": 3985 } }` (`stoppedBy`: `done` · `batch` · `quota` · `time`)

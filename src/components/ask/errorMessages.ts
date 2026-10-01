@@ -1,11 +1,10 @@
 // 오류 코드별 화면 안내 (API_SPEC §1.7 "화면 처리" 열). 무엇이 잘못됐고 어떻게 하면 되는지를 쓴다.
 import { ApiRequestError } from "@/lib/api-client/errors";
-import { EARLIEST_QUARTER, parseQuarter } from "@/lib/ask/quarter";
+import { EARLIEST_QUARTER_LABEL } from "@/lib/ask/quarter";
 
-/** 조회 시작 분기 "2015년 1분기" — EARLIEST_QUARTER가 바뀌면(Phase 5 예림 결정) 안내도 같이 바뀐다 */
+/** 조회 시작 분기 "2016년 1분기" — `EARLIEST_QUARTER`가 바뀌면 안내도 같이 바뀐다 (서버 422 문구와 같은 값) */
 export function earliestQuarterLabel(): string {
-  const { year, q } = parseQuarter(EARLIEST_QUARTER);
-  return `${year}년 ${q}분기`;
+  return EARLIEST_QUARTER_LABEL;
 }
 
 export interface ErrorNotice {

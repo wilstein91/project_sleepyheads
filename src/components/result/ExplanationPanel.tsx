@@ -1,4 +1,4 @@
-import type { Chart, Explanation, InsightKind } from "@/contracts";
+import type { Chart, Explanation, Insight, InsightKind, InsightTheme } from "@/contracts";
 import { RewriteSlot } from "@/components/board/rewrite-context";
 import { TermText } from "@/components/glossary/Term";
 import { isGoogleNewsUrl } from "@/lib/news/web-url";
@@ -8,6 +8,27 @@ const KIND: Record<InsightKind, { label: string; className: string }> = {
   risk: { label: "위험 요인", className: "bg-notice-bg text-notice-ink" },
   watch: { label: "확인할 점", className: "border border-line text-muted" },
 };
+
+/** 투자 포인트 관점 — 이 순서로 묶어 보여 준다 (투자 리포트, Phase 5 후속) */
+const THEMES: { id: InsightTheme; label: string }[] = [
+  { id: "growth", label: "성장성" },
+  { id: "profitability", label: "수익성" },
+  { id: "stability", label: "재무 안정성" },
+  { id: "valuation", label: "밸류에이션" },
+  { id: "price", label: "주가 흐름" },
+  { id: "issue", label: "이슈·공시" },
+  { id: "general", label: "종합" },
+];
+
+/** 관점별로 묶는다. 관점이 없는 옛 분석 글은 한 묶음(제목 없음) */
+function groupByTheme(insights: Insight[]): { label: string | null; items: Insight[] }[] {
+  if (insights.every((i) => !i.theme || i.theme === "general"))
+    return [{ label: null, items: insights }];
+  return THEMES.map((t) => ({
+    label: t.label,
+    items: insights.filter((i) => (i.theme ?? "general") === t.id),
+  })).filter((g) => g.items.length > 0);
+}
 
 /** 기사 발행 시각(UTC) → 한국 날짜 "2026. 9. 29." — 서버·브라우저 어디서 그려도 같은 값 */
 const KST_DATE = new Intl.DateTimeFormat("ko-KR", {
@@ -161,38 +182,47 @@ export function ExplanationPanel({
             <h3 id="exp-insights" className="font-semibold">
               투자 포인트
             </h3>
-            <ul className="mt-2 space-y-2.5">
-              {explanation.insights.map((insight) => (
-                <li key={insight.text} className="leading-7">
-                  {/* 라벨을 문장 앞에 붙여 휴대폰 폭을 다 쓴다 (한 화면 분량, PRD F-V11) */}
-                  <p>
-                    <span
-                      className={`mr-1.5 inline-block rounded px-1.5 text-xs font-semibold leading-5 ${KIND[insight.kind].className}`}
-                    >
-                      {KIND[insight.kind].label}
-                    </span>
-                    <TermText text={insight.text} />
-                    {insight.inferred && (
-                      <span
-                        className="ml-1.5 whitespace-nowrap text-xs text-muted"
-                        title={
-                          insight.newsIds.length > 0
-                            ? "뉴스 보도를 바탕으로 한 추정입니다 — 확인된 사실이 아닙니다"
-                            : (insight.filingIds?.length ?? 0) > 0
-                              ? "회사 공시 내용을 바탕으로 한 해석입니다"
-                              : "숫자를 바탕으로 한 해석이 들어간 문장입니다"
-                        }
-                      >
-                        (추정)
-                      </span>
-                    )}
-                    {chartButton(insight.chartRef, "차트 보기")}
-                    {filingButtons(insight.filingIds)}
-                    {newsButtons(insight.newsIds)}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            {groupByTheme(explanation.insights).map((group) => (
+              <div key={group.label ?? "all"} className="mt-2">
+                {group.label && (
+                  <h4 className="mt-3 text-sm font-semibold text-muted" data-testid="insight-theme">
+                    {group.label}
+                  </h4>
+                )}
+                <ul className="mt-1.5 space-y-2.5">
+                  {group.items.map((insight) => (
+                    <li key={insight.text} className="leading-7">
+                      {/* 라벨을 문장 앞에 붙여 휴대폰 폭을 다 쓴다 (한 화면 분량, PRD F-V11) */}
+                      <p>
+                        <span
+                          className={`mr-1.5 inline-block rounded px-1.5 text-xs font-semibold leading-5 ${KIND[insight.kind].className}`}
+                        >
+                          {KIND[insight.kind].label}
+                        </span>
+                        <TermText text={insight.text} />
+                        {insight.inferred && (
+                          <span
+                            className="ml-1.5 whitespace-nowrap text-xs text-muted"
+                            title={
+                              insight.newsIds.length > 0
+                                ? "뉴스 보도를 바탕으로 한 추정입니다 — 확인된 사실이 아닙니다"
+                                : (insight.filingIds?.length ?? 0) > 0
+                                  ? "회사 공시 내용을 바탕으로 한 해석입니다"
+                                  : "숫자를 바탕으로 한 해석이 들어간 문장입니다"
+                            }
+                          >
+                            (추정)
+                          </span>
+                        )}
+                        {chartButton(insight.chartRef, "차트 보기")}
+                        {filingButtons(insight.filingIds)}
+                        {newsButtons(insight.newsIds)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </section>
         )}
       </div>

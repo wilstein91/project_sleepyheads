@@ -3,9 +3,21 @@
 import { z } from "zod";
 
 export const INSIGHT_KINDS = ["positive", "risk", "watch"] as const;
+/** 투자 포인트의 관점 (투자 리포트, 계약 `InsightTheme`) */
+export const INSIGHT_THEMES = [
+  "growth",
+  "profitability",
+  "stability",
+  "valuation",
+  "price",
+  "issue",
+  "general",
+] as const;
 
 const insightSchema = z.object({
   kind: z.enum(INSIGHT_KINDS),
+  // 옛 고정 응답(회귀 세트 ai-fixed)에는 없다 — 없으면 general
+  theme: z.enum(INSIGHT_THEMES).optional(),
   text: z.string().min(1),
   figure_ids: z.array(z.string()),
   news_ids: z.array(z.string()),
@@ -56,9 +68,19 @@ export const AI_EXPLANATION_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["kind", "text", "figure_ids", "news_ids", "filing_ids", "chart_ref", "inferred"],
+        required: [
+          "kind",
+          "theme",
+          "text",
+          "figure_ids",
+          "news_ids",
+          "filing_ids",
+          "chart_ref",
+          "inferred",
+        ],
         properties: {
           kind: { type: "string", enum: INSIGHT_KINDS },
+          theme: { type: "string", enum: INSIGHT_THEMES },
           text: { type: "string" },
           figure_ids: { type: "array", items: { type: "string" } },
           news_ids: { type: "array", items: { type: "string" } },

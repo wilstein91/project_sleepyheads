@@ -70,7 +70,8 @@
       }
     ],
     "notes": [
-      "조회 가능 범위(EARLIEST_QUARTER 2015Q1) 안이지만 OpenDART 재무 API에 2015 1분기보고서가 없다(013) — '계정 값 없음'이 아니라 '보고서 없음'"
+      "OpenDART 재무 API에 2015 1분기보고서가 없다(013) — '계정 값 없음'이 아니라 '보고서 없음'. 엔진(runAnalysis)에 직접 넣었을 때의 정답이다",
+      "Phase 5: 조회 시작 분기가 2016Q1(EARLIEST_QUARTER)로 바뀌어 질문 경로에서는 이 질문이 '기간이 범위 밖'(OUT_OF_RANGE)이 된다"
     ],
     "fixture": "tests/accuracy/fixtures/sk-hynix-valuation.json"
   },

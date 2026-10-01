@@ -118,11 +118,16 @@ export async function findReusableExplanation(
     dataVersionId: string;
     requestHash: string;
     excludeAnalysisId: string;
+    /**
+     * 이번 결과에 투자 리포트가 있으면 그 주가 기준일 (Phase 5 후속). 그러면 **같은 기준일의 리포트로 쓴 분석 글만**
+     * 재사용한다 — 리포트 전 분석 글(질문 숫자만 해설)이나 다른 날 주가로 쓴 글을 다시 보여 주지 않게
+     */
+    reportPriceDate?: string | null;
   },
 ): Promise<Explanation | null> {
   const { data, error } = await client
     .from("analyses")
-    .select("id, explanation")
+    .select("id, explanation, report_price_date:result->report->>priceDate")
     .eq("owner_id", params.ownerId)
     .eq("dataset_version_id", params.dataVersionId)
     .eq("request_hash", params.requestHash)
@@ -130,7 +135,12 @@ export async function findReusableExplanation(
     .order("created_at", { ascending: false })
     .limit(5);
   if (error) throw new Error(`재사용할 분석 조회 실패: ${error.message}`);
-  const rows = (data ?? []) as { id: string; explanation: Explanation | null }[];
+  const rows = (data ?? []) as {
+    id: string;
+    explanation: Explanation | null;
+    report_price_date?: string | null;
+  }[];
+  const withReport = params.reportPriceDate !== undefined;
   // 공시 원문 근거(filingClues, 2026-10-01)가 생기기 전에 쓴 분석 글은 재사용하지 않는다 — 같은 질문을 다시 해도
   // 원문 근거 없는 옛 글이 나오지 않게. 새 코드는 근거가 없어도 빈 배열을 남긴다
   return (
@@ -138,7 +148,11 @@ export async function findReusableExplanation(
       (r) =>
         r.id !== params.excludeAnalysisId &&
         r.explanation?.status === "ready" &&
-        Array.isArray(r.explanation.filingClues),
+        Array.isArray(r.explanation.filingClues) &&
+        (!withReport ||
+          ((r.report_price_date ?? null) === params.reportPriceDate &&
+            // 리포트를 읽고 쓴 글에는 관점(theme)이 붙는다
+            r.explanation.insights.some((i) => i.theme !== undefined))),
     )?.explanation ?? null
   );
 }

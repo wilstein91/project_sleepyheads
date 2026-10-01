@@ -12,9 +12,9 @@ export const NULL_REASON_LABEL: Record<NullReason, string> = {
   CAPITAL_IMPAIRMENT: "자본잠식",
 };
 
-/** Y축 단위 글자에 맞춰 원 단위 금액을 나눌 값 ("조 원" → 1조) */
+/** Y축 단위 글자에 맞춰 원 단위 금액(·주 수)을 나눌 값 ("조 원" → 1조, "만 주" → 1만) */
 export function unitDivisor(unit: Unit, yAxisLabel?: string): number {
-  if (unit !== "KRW" || !yAxisLabel) return 1;
+  if ((unit !== "KRW" && unit !== "COUNT") || !yAxisLabel) return 1;
   if (yAxisLabel.includes("조")) return 1e12;
   if (yAxisLabel.includes("억")) return 1e8;
   if (yAxisLabel.includes("만")) return 1e4;

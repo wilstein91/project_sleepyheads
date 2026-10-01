@@ -20,6 +20,21 @@ interface DartCompanyProfile extends DartEnvelope {
   acc_mt?: string; // "12"
 }
 
+/**
+ * OpenDART가 그 기업의 개황을 주지 않았다(013 등 정상이 아닌 상태) — 폐지된 기업처럼 다시 해도 같을 가능성이 크다.
+ * 네트워크·한도 오류(`UpstreamApiError`·`QuotaExceededError`)와 구분해 prefill이 며칠 건너뛰는 근거로 쓴다.
+ */
+export class CompanyProfileUnavailableError extends Error {
+  constructor(
+    readonly corpCode: string,
+    readonly status: string,
+    detail: string,
+  ) {
+    super(`기업개황 조회 실패 (${corpCode}): ${status} ${detail}`);
+    this.name = "CompanyProfileUnavailableError";
+  }
+}
+
 export interface CompanyProfileOptions extends DartFetchOptions {
   /** 테스트에서 가짜 Supabase 클라이언트를 주입할 때만 쓴다. */
   client?: SupabaseClient;
@@ -74,9 +89,7 @@ export async function ensureCompanyProfile(
     options,
   );
   if (dartProfile.status !== "000") {
-    throw new Error(
-      `기업개황 조회 실패 (${corpCode}): ${dartProfile.status} ${dartProfile.message}`,
-    );
+    throw new CompanyProfileUnavailableError(corpCode, dartProfile.status, dartProfile.message);
   }
 
   const market = dartProfile.corp_cls ? (MARKET_BY_CORP_CLS[dartProfile.corp_cls] ?? null) : null;

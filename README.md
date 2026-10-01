@@ -41,7 +41,7 @@
 |---|---|
 | 화면·서버 | **Next.js 16** (App Router, `src/proxy.ts`), React 19, TypeScript, Tailwind CSS, Recharts |
 | DB·로그인 | **Supabase** (Postgres + RLS, 구글 로그인) — 프로젝트 `sleepyhead` 하나 |
-| 배포 | **Vercel** (Hobby, Cron 2개) |
+| 배포 | **Vercel** (Hobby, Cron 3개) |
 | AI | **OpenAI** Responses API + Structured Outputs — 질문 해석·뉴스 요지 `gpt-6-luna`, 분석 글 `gpt-6-sol` |
 | 테스트 | Vitest(단위·정확도·DB·회귀), Playwright(화면 1280px·375px), GitHub Actions (Linux·Windows) |
 
@@ -144,11 +144,15 @@ pnpm check:keys
 ## 9. 운영 메모
 
 ### 9.1 시연 전 점검 — Supabase 일시정지 해제
-Supabase 무료 플랜은 **7일 동안 활동이 적으면 프로젝트를 일시정지**합니다 (약 1주 전 경고 메일, 정지 후 확인 메일. 정지 후 90일 안에는 되살릴 수 있음 — [Supabase 공식 문서](https://supabase.com/docs/guides/platform/free-project-pausing), 2026-10-01 확인).
+Supabase 무료 플랜은 **7일 동안 활동이 적으면 프로젝트를 일시정지**합니다 (약 1주 전 경고 메일, 정지 후 확인 메일. 정지 후 1년 안에는 대시보드에서 되살릴 수 있음 — [Supabase 공식 문서](https://supabase.com/docs/guides/platform/free-project-pausing), 2026-10-01 확인).
 
 1. https://supabase.com/dashboard 에 로그인 → 조직 → `sleepyhead` 프로젝트를 누릅니다.
 2. 일시정지 상태면 **Resume project**를 누르고 확인합니다. 데이터·설정은 그대로 돌아옵니다 (몇 분 걸림).
 3. 확인: 배포 주소 첫 화면 아래 SK하이닉스 예시가 보이고, 로컬에서 `pnpm check:keys`의 Supabase 2줄이 ✅
+
+4. **한 번에 점검** (읽기만): `node scripts/demo-preflight.mjs` — 배포 첫 화면·비로그인 예시·키 유무·오늘 AI 비용과 전자공시·주가 호출 수·1시간 넘게 멈춘 분석·크론 3개의 마지막 실행을 ✅/⚠️로 보여 줍니다(키 값은 출력하지 않음, ⚠️가 있으면 종료 코드 1). 운영 DB 항목은 `.env.local`에 운영 Supabase 주소·서버 키가 있는 PC에서만 나옵니다. 키를 실제로 불러 보려면 `--keys`(키마다 호출 1회 — AI 토큰을 조금 쓰니 시연 당일 1번만). 판정 기준·⚠️일 때 할 일: [OPS_RUNBOOK](DevelopDoc/OPS_RUNBOOK.md) §2
+5. **시연 데이터 미리 받기** (AI 0): `node scripts/warm-demo.mjs` — 시연 기업(DEMO_SCRIPT §2)의 보고서·주가를 미리 받아 첫 조회 지연을 없앱니다. 두 번째부터 "이미 있음"이면 정상, ⚠️ 경쟁사 다름이면 DEMO_SCRIPT §2를 고칩니다. 팀 DB에 캐시를 채우는 쓰기라 시연 전날·30분 전에 한 번씩. 그 뒤 시연 질문을 **시연 계정으로 한 번씩 미리** 해 두면 시연 때 분석 글이 재사용돼 빨라집니다(질문당 AI 2회 — 리허설과 같이)
+6. **DB 백업 1회** (무료 플랜은 자동 백업 없음): `bash scripts/db-backup.sh` — Docker Desktop·Supabase 로그인 필요, 저장소 밖 폴더에 저장. 복구 순서: OPS_RUNBOOK §1
 
 시연 전날부터 끝날 때까지 **DB 구조 마이그레이션은 적용하지 않습니다.**
 
@@ -163,7 +167,7 @@ update quota_config set value = 30 where key = 'questions_per_day';
 |---|---|---|
 | `questions_per_day` | 20 | 회원별 하루 질문(후속 질문·설명 다시 쓰기 포함) |
 | `llm_questions_per_day_global` | 300 | 서비스 전체 하루 AI 사용 질문 |
-| `max_llm_cost_usd_per_question` | 0.03 | 질문당 AI 비용 상한(USD) |
+| `max_llm_cost_usd_per_question` | 0.10 | 질문당 AI 비용 상한(USD) — 투자 리포트 + 결론 최대 15문장 분석 글 |
 | `max_seconds_per_question` | 90 | 질문당 실행 시간 상한(초) |
 | `dart_global_soft_limit` / `dart_global_hard_limit` | 16000 / 19000 | OpenDART 전체 하루 호출 |
 | `max_declines_per_day` | 10 | 회원별 하루 거절 상한 |
@@ -193,4 +197,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://projectsleepyheads.vercel.
 - **남용 방어 ✅**: 분당 요청 제한, 회원 하루 질문 수, 외부 API 전체 상한, 질문당 단계·시간·AI 비용 상한
 - **사람이 확인할 것 👤**: Supabase 이메일 가입 꺼짐 · Site URL·Redirect URL과 구글 OAuth 리디렉션 주소 · OpenAI 키별 월 예산 상한 · Vercel 사용량
 - **⚠️ 무료 플랜은 자동 백업이 없다** — 시연 전 `supabase db dump`로 한 번 내려받아 보관
-- 다시 점검: `node scripts/security-check.mjs --url https://projectsleepyheads.vercel.app`
+- **Security Advisor 경고 2개는 근거를 적고 남김**: `pg_trgm` 확장이 public 스키마 — 권한이 센 함수가 아니라 위험이 낮고, 옮기면 기업 찾기(유사도 검색)가 깨질 수 있어 시연 뒤로 / 유출 비밀번호 보호 꺼짐 — 비밀번호 로그인을 쓰지 않아 해당 없음
+- **비밀 값 검사 도구(`secretlint`)의 1건은 오탐**: `tests/unit/news-safety.test.ts`의 `https://아이디:비밀번호@…` 가짜 주소(이런 주소를 거절하는지 보는 테스트)
+- **오래 멈춘 분석 정리 (WU-501)**: 1시간 넘게 진행이 없는 "분석 중" 분석은 그 회원이 다음에 질문할 때 정리된다(결과가 있으면 부분 결과, 없으면 실패). 그 안에 다시 열면 마지막 성공 단계 다음부터 이어서 한다
+- 다시 점검: `node scripts/security-check.mjs --url https://projectsleepyheads.vercel.app` — 끝에 ✅면 통과, ⚠️면 걸린 파일·커밋 위치만 나온다(키 값은 출력하지 않음, 종료 코드 1)

@@ -9,16 +9,24 @@ const { ensureProfileMock, adminState } = vi.hoisted(() => ({
   ensureProfileMock: vi.fn(),
   adminState: { client: null as unknown },
 }));
-vi.mock("@/lib/companies/profile", () => ({ ensureCompanyProfile: ensureProfileMock }));
+vi.mock("@/lib/companies/profile", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/companies/profile")>()),
+  ensureCompanyProfile: ensureProfileMock,
+}));
 vi.mock("@/lib/supabase/admin", () => ({ getSupabaseAdmin: () => adminState.client }));
 
 const { prefillCompanyProfiles, PREFILL_BATCH } = await import("@/lib/companies/prefill");
+const { CompanyProfileUnavailableError } = await import("@/lib/companies/profile");
+const { UpstreamApiError } = await import("@/lib/quota/errors");
 const { GET } = await import("@/app/api/cron/prefill-profiles/route");
 
 type Row = Record<string, unknown>;
 
-/** 이 기능이 쓰는 체인만: select→eq/is→order→limit→maybeSingle 또는 await (limit은 거른 뒤 자른다) */
-function fakeDb(tables: Record<string, Row[]>) {
+/**
+ * 이 기능이 쓰는 체인만: select→eq/is/or→order→limit→maybeSingle 또는 await (limit은 거른 뒤 자른다),
+ * update→eq. `or`는 "col.is.null,col.lt.<값>" 꼴만. `noFailedColumn`이면 profile_failed_at 칸이 없는 DB(42703)
+ */
+function fakeDb(tables: Record<string, Row[]>, { noFailedColumn = false } = {}) {
   const from = (table: string) => {
     const filters: ((r: Row) => boolean)[] = [];
     let order: string | null = null;
@@ -29,15 +37,38 @@ function fakeDb(tables: Record<string, Row[]>) {
         rows = [...rows].sort((a, b) => String(a[order!]).localeCompare(String(b[order!])));
       return rows.slice(0, limit);
     };
+    let missingColumn = false;
     const builder = {
       select: () => builder,
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), builder),
       is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), builder),
+      or: (expr: string) => {
+        if (noFailedColumn && expr.includes("profile_failed_at")) missingColumn = true;
+        const parts = expr.split(",").map((p) => p.split("."));
+        filters.push((r) =>
+          parts.some(([c, op, ...rest]) => {
+            const v = rest.join(".");
+            if (op === "is") return (r[c] ?? null) === null;
+            return r[c] != null && String(r[c]) < v; // lt (ISO 시각 문자열)
+          }),
+        );
+        return builder;
+      },
       order: (c: string) => ((order = c), builder),
       limit: (n: number) => ((limit = n), builder),
+      update: (patch: Row) => ({
+        eq: async (c: string, v: unknown) => {
+          for (const r of tables[table] ?? []) if (r[c] === v) Object.assign(r, patch);
+          return { error: null };
+        },
+      }),
       maybeSingle: async () => ({ data: run()[0] ?? null, error: null }),
-      then: (resolve: (v: { data: Row[]; error: null }) => void) =>
-        resolve({ data: run(), error: null }),
+      then: (resolve: (v: { data: Row[] | null; error: unknown }) => void) =>
+        resolve(
+          missingColumn
+            ? { data: null, error: { code: "42703", message: "column does not exist" } }
+            : { data: run(), error: null },
+        ),
     };
     return builder;
   };
@@ -53,14 +84,17 @@ function companies(n: number, filledFrom = Infinity): Row[] {
   }));
 }
 
-function db(rows: Row[], usedToday = 0, soft = 16000) {
-  return fakeDb({
-    companies: rows,
-    quota_config: [{ key: "dart_global_soft_limit", value: soft }],
-    api_usage_daily: usedToday
-      ? [{ day_kst: "2026-10-02", provider: "dart", calls: usedToday }]
-      : [],
-  });
+function db(rows: Row[], usedToday = 0, soft = 16000, options: { noFailedColumn?: boolean } = {}) {
+  return fakeDb(
+    {
+      companies: rows,
+      quota_config: [{ key: "dart_global_soft_limit", value: soft }],
+      api_usage_daily: usedToday
+        ? [{ day_kst: "2026-10-02", provider: "dart", calls: usedToday }]
+        : [],
+    },
+    options,
+  );
 }
 
 beforeEach(() => {
@@ -115,13 +149,67 @@ describe("prefillCompanyProfiles", () => {
 
   it("하루 한도(QuotaExceeded)에 걸리면 더 부르지 않는다, 그 밖의 실패는 건너뛰고 센다", async () => {
     ensureProfileMock
-      .mockRejectedValueOnce(new Error("기업개황 조회 실패 (00000000): 013"))
+      .mockRejectedValueOnce(new CompanyProfileUnavailableError("00000000", "013", "없음"))
       .mockResolvedValueOnce({ fromCache: false })
       .mockRejectedValueOnce(new QuotaExceededError("dart", "2026-10-03T00:00:00+09:00"));
     const result = await prefillCompanyProfiles({ client: db(companies(20)), now: () => +NOW });
     // 동시 4개라 이미 시작한 것은 끝나지만, 한도 뒤로는 새로 시작하지 않는다
     expect(ensureProfileMock.mock.calls.length).toBeLessThanOrEqual(4 + 3);
     expect(result).toMatchObject({ failed: 1, stoppedBy: "quota", remaining: true });
+  });
+
+  it("개황을 못 받은 기업(013 등)은 실패 시각을 남기고 7일 동안 건너뛴다 (Phase 5)", async () => {
+    const rows = companies(3);
+    ensureProfileMock.mockImplementation(async (corpCode: string) => {
+      if (corpCode === "00000001")
+        throw new CompanyProfileUnavailableError(corpCode, "013", "없음");
+      return { fromCache: false };
+    });
+    const first = await prefillCompanyProfiles({ client: db(rows), now: () => +NOW });
+    // 실패 시각을 남긴 기업은 며칠 건너뛰므로 남은 일로 세지 않는다
+    expect(first).toMatchObject({ filled: 2, failed: 1, remaining: false });
+    expect(rows[1].profile_failed_at).toBe(NOW.toISOString());
+    expect(rows[0].profile_failed_at).toBeUndefined();
+
+    // 성공한 기업은 개황이 채워졌다고 치고, 다음 날·6일 뒤에는 실패한 기업을 부르지 않는다
+    rows[0].profile_checked_at = rows[2].profile_checked_at = NOW.toISOString();
+    for (const days of [1, 6]) {
+      ensureProfileMock.mockClear();
+      const later = +NOW + days * 24 * 60 * 60 * 1000;
+      const result = await prefillCompanyProfiles({ client: db(rows), now: () => later });
+      expect(ensureProfileMock).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ filled: 0, failed: 0, remaining: false, stoppedBy: "done" });
+    }
+
+    // 7일이 지나면 다시 시도한다
+    ensureProfileMock.mockClear();
+    const weekLater = +NOW + 7 * 24 * 60 * 60 * 1000 + 1;
+    await prefillCompanyProfiles({ client: db(rows), now: () => weekLater });
+    expect(ensureProfileMock.mock.calls.map((c) => c[0])).toEqual(["00000001"]);
+  });
+
+  it("네트워크 오류처럼 기업 탓이 아닌 실패는 실패 시각을 남기지 않는다 (다음 실행에 다시)", async () => {
+    const rows = companies(2);
+    ensureProfileMock.mockRejectedValue(new UpstreamApiError("dart", "시간 초과", true));
+    const result = await prefillCompanyProfiles({ client: db(rows), now: () => +NOW });
+    expect(result).toMatchObject({ filled: 0, failed: 2, remaining: true });
+    expect(rows.every((r) => r.profile_failed_at === undefined)).toBe(true);
+  });
+
+  it("profile_failed_at 칸이 없으면(마이그레이션 적용 전) 실패 기록 없이 예전처럼 채운다", async () => {
+    const rows = companies(3);
+    ensureProfileMock.mockRejectedValueOnce(
+      new CompanyProfileUnavailableError("00000000", "013", "없음"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await prefillCompanyProfiles({
+      client: db(rows, 0, 16000, { noFailedColumn: true }),
+      now: () => +NOW,
+    });
+    expect(ensureProfileMock).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ filled: 2, failed: 1 });
+    expect(rows[0].profile_failed_at).toBeUndefined();
+    warn.mockRestore();
   });
 
   it("240초가 지나면 새 기업을 시작하지 않는다 (maxDuration 300초 안)", async () => {

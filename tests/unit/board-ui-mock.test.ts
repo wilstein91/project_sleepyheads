@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Analysis } from "@/contracts";
-import { addQuarters, latestAvailableQuarter } from "@/lib/ask/quarter";
+import { addQuarters, EARLIEST_QUARTER, latestAvailableQuarter } from "@/lib/ask/quarter";
 import { skhynixRecent } from "../fixtures/mock/skhynix-recent";
 
 // WU-401 가짜 모드 보드(B1·B2)·설명 다시 쓰기(Q9) — 화면 개발용 흉내가 서버 계약(API_SPEC B1·B2·Q9)대로 답하는지.
@@ -125,7 +125,7 @@ describe("B2 mockUpdateBoardFilters", () => {
   it("긴 기간 + 비교 기업 여러 곳이면 413 TOO_LARGE, 보드는 바뀌지 않는다", async () => {
     const e = await errorOf(
       mockUpdateBoardFilters(ID, {
-        period: { from: "2015Q1", to: latestAvailableQuarter() },
+        period: { from: EARLIEST_QUARTER, to: latestAvailableQuarter() },
         peers: ["005930", "035420"],
       }),
     );

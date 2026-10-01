@@ -7,3 +7,6 @@ playwright-report
 next-env.d.ts
 # 문서는 사람이 직접 관리한다
 *.md
+
+# 실제 API 한 번 돌린 결과를 그대로 둔 가짜 모드 데이터 (한 줄 JSON — 화면 번들 크기 때문에 펼치지 않는다)
+tests/fixtures/mock/skhynix-report.json

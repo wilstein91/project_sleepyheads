@@ -5,6 +5,15 @@ import { expect, test, type Page } from "@playwright/test";
 
 const COMPLEX = "SK하이닉스 영업이익이 늘어난 원인 알려줘";
 
+/** 멈춘 페이지 시계를 50ms씩 돌리며 화면 조건을 기다린다 (최대 10초 분량) */
+async function advanceUntil(page: Page, ready: () => Promise<boolean>) {
+  for (let i = 0; i < 200; i++) {
+    if (await ready()) return;
+    await page.clock.runFor(50);
+  }
+  throw new Error("시계를 10초 돌려도 화면이 바뀌지 않았다");
+}
+
 async function askComplex(page: Page, question = COMPLEX) {
   await page.goto("/");
   await expect(page.getByTestId("questions-remaining")).toBeVisible();
@@ -91,13 +100,22 @@ test.describe("단계 실행 (WU-302)", () => {
   });
 
   test("실행 중 [취소]를 누르면 반복을 멈추고 '취소한 분석'", async ({ page }) => {
+    // 가짜 단계(약 0.45초씩)가 화면 테스트를 한꺼번에 돌릴 때 [취소]를 누르기 전에 끝까지 지나가 가끔 실패했다 —
+    // 페이지 시계를 멈춰 두고 직접 조금씩 돌려, 1/4단계에서 반드시 멈춘 채 [취소]를 누른다
+    await page.clock.install();
     await askComplex(page);
+    await page.clock.pauseAt(new Date(Date.now() + 1_000));
     await page.getByRole("button", { name: "분석 시작" }).click();
     const progress = page.getByTestId("run-progress");
-    // 전체 화면 테스트를 병렬로 돌리면 가짜 단계가 빨리 지나가 1/4를 놓칠 수 있다 — 끝나기 전(1~3단계)이면 된다
-    await expect(progress).toContainText(/[123]\/4단계/);
+    // textContent()는 요소가 생길 때까지 기다리므로(시계가 멈춰 있으면 영영 안 생김) 개수부터 본다
+    await advanceUntil(
+      page,
+      async () => (await progress.count()) > 0 && /1\/4단계/.test(await progress.innerText()),
+    );
     await progress.getByRole("button", { name: "취소" }).click();
-    await expect(page.getByRole("heading", { name: "취소한 분석입니다" })).toBeVisible();
+    const canceled = page.getByRole("heading", { name: "취소한 분석입니다" });
+    await advanceUntil(page, async () => (await canceled.count()) > 0);
+    await expect(canceled).toBeVisible();
     await expect(page.getByRole("heading", { name: "투자 포인트" })).toHaveCount(0);
   });
 

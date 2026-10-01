@@ -69,7 +69,7 @@ test("긴 기간 + 비교 기업 여러 곳이면 413 안내 — 기간이나 �
     await filter.getByRole("button", { name: new RegExp(name) }).click();
     await expect(filter.getByRole("list", { name: "고른 비교 기업" })).toContainText(name);
   }
-  await filter.getByLabel("시작 분기").selectOption("2015Q1");
+  await filter.getByLabel("시작 분기").selectOption("2016Q1");
   await filter.getByRole("button", { name: "기간 적용" }).click();
 
   const alert = page

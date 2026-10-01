@@ -412,6 +412,8 @@ async function executeTool(
           dataVersionId: built.result.basis.dataVersionId,
           requestHash: requestHashOf(analysis),
           excludeAnalysisId: analysis.id,
+          // 투자 리포트(Phase 5 후속)가 붙은 결과면 같은 주가 기준일의 리포트로 쓴 글만
+          ...(built.result.report ? { reportPriceDate: built.result.report.priceDate } : {}),
         })
         .catch(() => null);
       if (reused) {

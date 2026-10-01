@@ -3,7 +3,12 @@ import { z } from "zod";
 
 import type { AnalysisRequestView, BoardFilters, CompanyRef, Quarter } from "@/contracts";
 import { HttpError } from "@/lib/api/errors";
-import { compareQuarters, EARLIEST_QUARTER, latestAvailableQuarter } from "@/lib/ask/quarter";
+import {
+  compareQuarters,
+  EARLIEST_QUARTER,
+  EARLIEST_QUARTER_LABEL,
+  latestAvailableQuarter,
+} from "@/lib/ask/quarter";
 
 /** 비교 기업 최대 수 (대상 제외) */
 export const MAX_BOARD_PEERS = 5;
@@ -25,7 +30,7 @@ const BoardPatchSchema = z.object({ filters: BoardFiltersSchema }).strict();
 /**
  * B2 본문 `{ filters }`를 검사한다. 비교 기업은 중복을 빼고 대상 기업을 빼서 돌려준다.
  * - 모양이 틀림·시작이 끝보다 늦음·비교 기업 6곳 이상 → 400 VALIDATION_ERROR
- * - 2015Q1 이전·최신 분기 이후 → 422 OUT_OF_RANGE (잘라서 계산하지 않는다 — 화면이 고른 기간 그대로 보여 줘야 해서)
+ * - EARLIEST_QUARTER(2016Q1) 이전·최신 분기 이후 → 422 OUT_OF_RANGE (잘라서 계산하지 않는다 — 화면이 고른 기간 그대로 보여 줘야 해서)
  */
 export function parseBoardFilters(
   body: unknown,
@@ -51,7 +56,7 @@ export function parseBoardFilters(
     ) {
       throw new HttpError(
         "OUT_OF_RANGE",
-        `조회할 수 있는 기간은 2015년 1분기부터 최신 보고서(${latest})까지입니다.`,
+        `조회할 수 있는 기간은 ${EARLIEST_QUARTER_LABEL}부터 최신 보고서(${latest})까지입니다.`,
       );
     }
     filters.period = { from: period.from, to: period.to };

@@ -14,8 +14,11 @@ for (const analysis of fixtures) {
   const { explanation, result } = analysis;
 
   describe(`분석 글 규칙 — ${analysis.question}`, () => {
-    it(`결론 ${EXPLANATION_LIMITS.conclusionSentences}문장, 투자 포인트 ${EXPLANATION_LIMITS.insightsMin}~${EXPLANATION_LIMITS.insightsMax}개`, () => {
-      expect(explanation!.conclusion).toHaveLength(EXPLANATION_LIMITS.conclusionSentences);
+    it(`결론 ${EXPLANATION_LIMITS.conclusionSentences}문장 이내, 투자 포인트 ${EXPLANATION_LIMITS.insightsMin}~${EXPLANATION_LIMITS.insightsMax}개`, () => {
+      expect(explanation!.conclusion.length).toBeGreaterThanOrEqual(1);
+      expect(explanation!.conclusion.length).toBeLessThanOrEqual(
+        EXPLANATION_LIMITS.conclusionSentences,
+      );
       expect(explanation!.insights.length).toBeGreaterThanOrEqual(EXPLANATION_LIMITS.insightsMin);
       expect(explanation!.insights.length).toBeLessThanOrEqual(EXPLANATION_LIMITS.insightsMax);
     });

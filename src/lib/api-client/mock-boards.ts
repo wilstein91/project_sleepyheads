@@ -7,7 +7,6 @@
 //         분기 수 × 기업 수가 100을 넘음(예: 조회 시작 분기~최신 + 비교 기업 2곳) → 413
 //   AI 장애 흉내: sessionStorage에 MOCK_LLM_DOWN_KEY = "1"을 넣으면 Q9가 503 (차감 없음, 기존 설명 유지)
 //   새 데이터 버전 흉내: MOCK_BOARD_NEW_VERSION_KEY = "1"이면 B2 결과가 원래 분석과 다른 데이터 버전 + flags 맨 앞 한 줄
-import { earliestQuarterLabel } from "@/components/ask/errorMessages";
 import type {
   BoardFilters,
   BoardView,
@@ -17,6 +16,7 @@ import type {
 } from "@/contracts";
 import {
   EARLIEST_QUARTER,
+  EARLIEST_QUARTER_LABEL,
   compareQuarters,
   latestAvailableQuarter,
   quarterSpan,
@@ -120,7 +120,7 @@ function checkFilters(filters: BoardFilters): CompanyRef[] {
     ) {
       throw new ApiRequestError(
         "OUT_OF_RANGE",
-        `조회할 수 있는 기간은 ${earliestQuarterLabel()}부터 최신 보고서까지입니다.`,
+        `조회할 수 있는 기간은 ${EARLIEST_QUARTER_LABEL}부터 최신 보고서까지입니다.`,
         422,
       );
     }

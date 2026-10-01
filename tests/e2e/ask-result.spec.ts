@@ -150,40 +150,45 @@ test.describe("결과 화면 — 핵심 통과 테스트", () => {
     }
   });
 
-  test("분석 글을 글자 수 상한까지 채워도(투자 포인트 최대 개수) 375px 한 화면 안", async ({
+  test("분석 글이 길어도(결론 최대 문장 수·투자 포인트 최대 개수) 결론 앞 3문장은 375px 첫 화면 안, 가로로 넘치지 않는다", async ({
     page,
   }, testInfo) => {
+    // 투자 리포트(Phase 5 후속)로 분석 글이 관점별로 길어졌다 — 전체를 한 화면에 넣는 대신, 결론은 첫 화면에서 읽히고
+    // 투자 포인트는 아래로 이어 읽는다 (PRD F-V11 개정)
     test.skip(testInfo.project.name !== "mobile", "휴대폰 화면 기준");
     await askAndOpen(page, "SK하이닉스 최근 실적 어때?");
     const main = page.getByTestId("explanation-main");
     await expect(main).toBeVisible();
 
-    // 서버가 보낼 수 있는 가장 긴 글: 상한 글자 수를 결론 2문장과 투자 포인트 최대 개수에 나눠 채운다
-    const height = await page.evaluate((limits) => {
+    const box = await page.evaluate((limits) => {
       const el = document.querySelector('[data-testid="explanation-main"]')!;
-      const filler = "가".repeat(400);
-      const conclusion = [...el.querySelectorAll("section")][0].querySelectorAll("p");
+      // 실제 문장처럼 띄어쓰기가 있는 글 (띄어쓰기 없는 긴 글자는 줄바꿈 규칙상 줄이 안 나뉜다)
+      const filler = "가나다라 마바사 ".repeat(60);
+      const conclusionBox = [...el.querySelectorAll("section")][0];
+      const conclusion = conclusionBox.querySelector("div")!;
+      while (conclusion.children.length < limits.conclusionSentences) {
+        conclusion.appendChild(conclusion.lastElementChild!.cloneNode(true));
+      }
+      // 결론 한 문장은 실제 AI 출력 길이 정도 (2026-10-01 실측 최대 약 70자)
+      conclusion.querySelectorAll("p").forEach((p) => (p.textContent = filler.slice(0, 90)));
       const list = el.querySelector("ul")!;
       while (list.children.length < limits.insightsMax) {
         list.appendChild(list.lastElementChild!.cloneNode(true));
       }
-      const insightChars = Math.min(
-        limits.insightMaxChars,
-        Math.floor((limits.mainMaxChars * 0.7) / limits.insightsMax),
-      );
-      const conclusionChars = Math.floor(
-        (limits.mainMaxChars - insightChars * limits.insightsMax) / conclusion.length,
-      );
-      conclusion.forEach((p) => (p.textContent = filler.slice(0, conclusionChars)));
       list.querySelectorAll("p").forEach((p) => {
         const label = p.querySelector("span")!.outerHTML;
-        const rest = [...p.querySelectorAll("span, button")].slice(1).map((n) => n.outerHTML);
-        p.innerHTML = label + filler.slice(0, insightChars) + rest.join("");
+        p.innerHTML = label + filler.slice(0, limits.insightMaxChars);
       });
-      return el.getBoundingClientRect().height;
+      // 결론이 최대 15문장까지 길어질 수 있어(2026-10-01) 첫 화면에는 앞 3문장(질문의 답과 핵심)이 들어와야 한다
+      const third = conclusion.querySelectorAll("p")[2];
+      return {
+        conclusionBottom: third.getBoundingClientRect().bottom - el.getBoundingClientRect().top,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
     }, EXPLANATION_LIMITS);
 
-    expect(height).toBeLessThanOrEqual(650);
+    expect(box.conclusionBottom).toBeLessThanOrEqual(650);
+    expect(box.overflow).toBeLessThanOrEqual(0);
   });
 
   test("사용된 데이터에 행·열 수, 자료형, 기간이 보인다", async ({ page }) => {

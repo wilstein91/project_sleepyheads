@@ -122,18 +122,13 @@ describe("buildExplanation", () => {
     expect(result.insights).toHaveLength(0);
   });
 
-  it("뉴스 없이 원인을 추정한(inferred) 투자 포인트는 폐기된다", () => {
-    const result = buildExplanation({
+  // 2026-10-01 개정: 주어진 자료 안에서 추론해도 되지만, 원인·전망 문장은 추론 표현("~로 보입니다·예상됩니다·
+  // 추정됩니다·가능성이 있습니다")이 있어야 남고 화면에 (추정)으로 표시된다. 단정하는 원인 문장은 버린다
+  const one = (text: string, inferred: boolean, figureIds = ["f1"]) =>
+    buildExplanation({
       ai: baseAi({
         insights: [
-          {
-            kind: "risk",
-            text: "메모리 가격 하락 때문에 이익이 줄어든 것으로 보입니다.",
-            figure_ids: ["f1"],
-            news_ids: [],
-            chart_ref: null,
-            inferred: true,
-          },
+          { kind: "risk", text, figure_ids: figureIds, news_ids: [], chart_ref: null, inferred },
         ],
       }),
       figures: FIGURES,
@@ -141,31 +136,26 @@ describe("buildExplanation", () => {
       newsClues: [],
       hasNews: false,
       mixedScope: false,
-    });
-    expect(result.insights).toHaveLength(0);
+    }).insights;
+
+  it("뉴스 없이도 숫자에 근거한 원인 추론은 남는다 — 추론 표현이 있으면, (추정) 표시", () => {
+    const kept = one("메모리 가격 하락 때문에 이익이 줄어든 것으로 보입니다.", true);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].inferred).toBe(true);
+    // AI가 inferred:false로 보내도 원인 추론이면 서버가 (추정)으로 표시한다
+    expect(one("판매 가격 상승 영향으로 이익이 늘어난 것으로 추정됩니다.", false)[0].inferred).toBe(
+      true,
+    );
+    expect(one("이 흐름은 다음 분기에도 이어질 것으로 예상됩니다.", true)).toHaveLength(1);
   });
 
-  it("inferred:false로 표시해도 원인 주장 문장은 뉴스 없이 폐기된다 (자가 신고 우회 방지)", () => {
-    const result = buildExplanation({
-      ai: baseAi({
-        insights: [
-          {
-            kind: "risk",
-            text: "메모리 가격 하락 때문에 이익이 줄어든 것으로 보입니다.",
-            figure_ids: ["f1"],
-            news_ids: [],
-            chart_ref: null,
-            inferred: false,
-          },
-        ],
-      }),
-      figures: FIGURES,
-      charts: CHARTS,
-      newsClues: [],
-      hasNews: false,
-      mixedScope: false,
-    });
-    expect(result.insights).toHaveLength(0);
+  it("추론 표현 없이 단정한 원인 문장은 버린다 (inferred 자가 신고와 무관 — 우회 방지)", () => {
+    expect(one("메모리 가격 하락 때문에 이익이 줄었습니다.", false)).toHaveLength(0);
+    expect(one("메모리 가격 하락 때문입니다.", true)).toHaveLength(0);
+  });
+
+  it("추론이라고 밝힌(inferred) 문장에 추론 표현이 없으면 버린다", () => {
+    expect(one("다음 분기 이익은 더 늘어납니다.", true)).toHaveLength(0);
   });
 
   it("'원인을 확인할 필요'처럼 원인을 단정하지 않는 확인할 점은 뉴스 없이도 남는다", () => {
@@ -201,7 +191,7 @@ describe("buildExplanation", () => {
             figure_ids: ["f2"],
             news_ids: [],
             chart_ref: "c1",
-            inferred: true,
+            inferred: false,
           },
         ],
       }),
@@ -268,11 +258,12 @@ describe("buildExplanation", () => {
     );
   });
 
-  it("결론+투자 포인트 합계가 320자를 넘으면 뒤쪽 투자 포인트부터 폐기한다", () => {
+  it("결론+투자 포인트 합계가 mainMaxChars를 넘으면 뒤쪽 투자 포인트부터 폐기한다", () => {
     const longText = (n: number) => `문장 {{f1}} ${"가".repeat(n)}`;
-    const insights = [1, 2, 3, 4].map((i) => ({
+    const insights = Array.from({ length: 12 }, (_, k) => k + 1).map((i) => ({
       kind: "watch" as const,
-      text: longText(70 - i), // 각각 80자 이내지만 넷 다 더하면 320자를 넘도록
+      // 각각 insightMaxChars 이내지만 열두 개를 다 더하면 mainMaxChars를 넘도록 (개수 상한도 함께)
+      text: longText(EXPLANATION_LIMITS.insightMaxChars - 15 - i),
       figure_ids: ["f1"],
       news_ids: [],
       chart_ref: null,
@@ -294,13 +285,13 @@ describe("buildExplanation", () => {
     expect(result.insights.length).toBeLessThan(insights.length);
   });
 
-  it("80자를 넘는 투자 포인트는 폐기된다", () => {
+  it("insightMaxChars를 넘는 투자 포인트는 폐기된다", () => {
     const result = buildExplanation({
       ai: baseAi({
         insights: [
           {
             kind: "watch",
-            text: `{{f1}} ${"가".repeat(90)}`,
+            text: `{{f1}} ${"가".repeat(EXPLANATION_LIMITS.insightMaxChars + 10)}`,
             figure_ids: ["f1"],
             news_ids: [],
             chart_ref: null,

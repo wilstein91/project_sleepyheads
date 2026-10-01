@@ -3,6 +3,8 @@
 //   경쟁사 순서용 전체 목록(`sector/market-cap.ts`)을 오늘 받았으면 그것도 오늘 받은 것으로 친다.
 // - 과거 기준(asOf): 그 날짜가 지난 뒤에 받아 둔 가격이 있으면 부르지 않는다 (지난 가격은 바뀌지 않는다).
 // API에서 받은 행은 결합 검사(`join.ts`)를 위해 받은 그대로 돌려주고, 저장은 키(종목·기준일)가 겹치지 않는 행만 한다.
+// 받을 때마다 `price_fetch_state`에 "이 종목·기간 끝을 받았다"를 남긴다 — 기간 안 가격이 없는 종목(거래정지 등)도
+// 같은 날·같은 기준일에 다시 부르지 않게 (Phase 5, Phase 4 남긴 리뷰 ①).
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createConcurrencyGate } from "@/lib/quota/concurrency";
@@ -55,6 +57,20 @@ interface PriceListResponse extends PriceEnvelope {
   };
 }
 
+interface FetchState {
+  stock_code: string;
+  fetched_at: string;
+  row_count: number;
+}
+
+/** 마이그레이션 적용 전 경고는 프로세스마다 한 번만 (요청마다 찍으면 진짜 주가 오류가 묻힌다) */
+let warnedFetchState = false;
+function warnFetchStateOnce(message: string) {
+  if (warnedFetchState) return;
+  warnedFetchState = true;
+  console.warn(message);
+}
+
 interface StoredPrice {
   stock_code: string;
   base_date: string;
@@ -78,17 +94,28 @@ export async function loadPrices(
   const from = addDays(to, -PRICE_LOOKBACK_DAYS);
   const codes = [...new Set(stockCodes)];
 
-  const stored = await readStored(options.client, codes, from, to);
+  const [stored, fetchedAt] = await Promise.all([
+    readStored(options.client, codes, from, to),
+    readFetchState(options.client, codes, to),
+  ]);
   const gate = createConcurrencyGate(FETCH_CONCURRENCY);
   let externalCalls = 0;
   const perCode = await Promise.all(
     codes.map(async (code) => {
       const mine = stored.filter((r) => r.stock_code === code);
-      if (isFresh(mine, window, today)) return mine.map(fromStored);
+      // 받은 기록은 "받았지만 기간 안 가격 0행"일 때만 쓴다 — 행이 있었는데 저장된 게 없으면(같은 종목·기준일 2행)
+      // 다시 받아 결합 검사가 경고하게 둔다
+      const state = fetchedAt.get(code);
+      const fetchedEmpty = state?.row_count === 0 && isFetched(state.fetched_at, window, today);
+      if (isFresh(mine, window, today) || fetchedEmpty) {
+        return mine.map(fromStored);
+      }
       externalCalls += 1;
       const items = await gate.run(() => fetchStock(code, from, to, window, options));
       await store(options.client, items, now);
-      return items.map(fromItem).filter((r) => r.baseDate >= from && r.baseDate <= to);
+      const rows = items.map(fromItem).filter((r) => r.baseDate >= from && r.baseDate <= to);
+      await recordFetch(options.client, code, from, to, rows, now);
+      return rows;
     }),
   );
   const rows = perCode.flat();
@@ -99,16 +126,69 @@ export async function loadPrices(
 /**
  * 저장된 가격으로 충분한가. latest: 오늘(KST) 받은 행이 있다. asOf: 그날 가격이 있거나, 그 날짜가 지난 뒤(KST 다음 날
  * 이후)에 받은 행이 있다 — 그때 받은 기간 안 가격은 더 바뀌지 않는다.
- * 기간 안 가격이 하나도 없는 종목(거래정지 등)은 저장할 행이 없어 요청마다 다시 부른다 — 표에 "받았지만 없음"을
- * 남길 칸이 없다(가격 칸이 not null). 드문 경우라 그대로 둔다.
+ * 기간 안 가격이 하나도 없는 종목(거래정지 등)은 남는 행이 없다 — 그건 {@link isFetched}가 받은 기록으로 본다.
  */
 function isFresh(rows: readonly StoredPrice[], window: PriceWindow, today: string): boolean {
   return rows.some((r) => {
-    const fetchedDay = todayKst(new Date(r.fetched_at));
-    if (window.kind === "latest") return fetchedDay === today;
     // 그날 가격이 이미 있으면 그날이 "그날 이전 마지막 거래일"이다 (오후에 받은 당일 가격으로 만든 분석의 재실행)
-    return r.base_date === window.date || fetchedDay > window.date;
+    if (window.kind === "asOf" && r.base_date === window.date) return true;
+    return isFetched(r.fetched_at, window, today);
   });
+}
+
+/** 그 시각에 받은 것으로 충분한가 — latest: 오늘(KST) 받았다. asOf: 기준일이 지난 뒤(KST 다음 날 이후)에 받았다 */
+function isFetched(fetchedAt: string | undefined, window: PriceWindow, today: string): boolean {
+  if (!fetchedAt) return false;
+  const fetchedDay = todayKst(new Date(fetchedAt));
+  return window.kind === "latest" ? fetchedDay === today : fetchedDay > window.date;
+}
+
+/**
+ * 종목별로 이 기간 끝(`to`)을 마지막으로 받은 시각. 마이그레이션(`price_fetch_state`) 적용 전이거나 조회가 실패해도
+ * 분석을 멈추지 않는다 — 기록이 없는 것으로 보고 예전처럼 주가 API를 부른다.
+ */
+async function readFetchState(
+  client: SupabaseClient,
+  codes: readonly string[],
+  to: string,
+): Promise<Map<string, FetchState>> {
+  if (codes.length === 0) return new Map();
+  const { data, error } = await client
+    .from("price_fetch_state")
+    .select("stock_code, fetched_at, row_count")
+    .in("stock_code", [...codes])
+    .eq("range_to", to);
+  if (error) {
+    warnFetchStateOnce(
+      `[price] price_fetch_state 조회 실패 — 받은 기록 없이 진행: ${error.message}`,
+    );
+    return new Map();
+  }
+  return new Map(((data ?? []) as FetchState[]).map((r) => [r.stock_code, r]));
+}
+
+/** 받은 기록 — 가격이 없었어도(0행) 남긴다. 실패해도 분석은 계속한다(다음 요청이 다시 부를 뿐) */
+async function recordFetch(
+  client: SupabaseClient,
+  code: string,
+  from: string,
+  to: string,
+  rows: readonly PriceRow[],
+  now: Date,
+) {
+  const { error } = await client.from("price_fetch_state").upsert(
+    [
+      {
+        stock_code: code,
+        range_to: to,
+        range_from: from,
+        row_count: rows.filter((r) => r.stockCode === code).length,
+        fetched_at: now.toISOString(),
+      },
+    ],
+    { onConflict: "stock_code,range_to" },
+  );
+  if (error) warnFetchStateOnce(`[price] price_fetch_state 저장 실패 (${code}): ${error.message}`);
 }
 
 async function readStored(

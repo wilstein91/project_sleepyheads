@@ -11,6 +11,7 @@ import {
   refundQuestionQuota,
 } from "@/lib/quota/question-quota";
 import { CALC_VERSION } from "@/lib/metrics/types";
+import { carryReport } from "@/lib/report/carry";
 import { runAnalysis } from "@/lib/runner/execute";
 import { withLatestDefaultPeriod } from "@/lib/runner/latest-request";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -129,7 +130,8 @@ export const POST = route(
 
       const outcome = await runAnalysis(request, { userId, client: admin, version });
       if (outcome.kind !== "done") throw new Error("재실행이 전처리 진단에서 멈췄습니다");
-      const result = outcome.result;
+      // 투자 리포트는 그 분석을 한 시점의 스냅숏 — 원래 것을 그대로 붙인다 (Phase 5 후속)
+      const result = carryReport(original.result, outcome.result);
       result.basis.newerDataVersionAvailable = await isNewerDataAvailable(admin, version.sources);
       const same = sameNumbers(original.result, result);
       // 숫자가 같으면 설명도 그대로 맞다. 다르면(있어서는 안 되는 경우) 옛 설명을 "갱신 필요"로 표시한다.

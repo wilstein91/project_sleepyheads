@@ -1,7 +1,10 @@
 import type { Quarter } from "@/contracts";
 
-/** 조회 가능 범위의 시작 (TECH §4.3) */
-export const EARLIEST_QUARTER: Quarter = "2015Q1";
+/**
+ * 조회 가능 범위의 시작 (TECH §4.3). OpenDART 재무 API(`fnlttSinglAcntAll`)는 2015년 1분기·반기·3분기보고서가 없어(013)
+ * 2015년 분기는 모두 "보고서 없음"이었다 — Phase 5에서 2015Q1 → 2016Q1로 줄였다 (2026-10-01 팀 결정).
+ */
+export const EARLIEST_QUARTER: Quarter = "2016Q1";
 
 export interface QuarterParts {
   year: number;
@@ -19,6 +22,12 @@ export function parseQuarter(quarter: Quarter): QuarterParts {
 export function formatQuarter(year: number, q: 1 | 2 | 3 | 4): Quarter {
   return `${year}Q${q}` as Quarter;
 }
+
+/** 안내 문구용 조회 시작 분기 ("2016년 1분기") — 422 문구가 EARLIEST_QUARTER를 따라가게 */
+export const EARLIEST_QUARTER_LABEL = (() => {
+  const { year, q } = parseQuarter(EARLIEST_QUARTER);
+  return `${year}년 ${q}분기`;
+})();
 
 /** 분기를 정렬·연산 가능한 정수로 바꾼다 (0-based, year*4 + (q-1)). */
 function toIndex({ year, q }: QuarterParts): number {
@@ -95,7 +104,7 @@ function toIsoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** 2015Q1~최신 보고서 범위로 자른다. 완전히 벗어나면 null (§4.5 "기간이 범위 밖"). */
+/** EARLIEST_QUARTER(2016Q1)~최신 보고서 범위로 자른다. 완전히 벗어나면 null (§4.5 "기간이 범위 밖"). */
 export function clipToAvailableRange(
   from: Quarter,
   to: Quarter,

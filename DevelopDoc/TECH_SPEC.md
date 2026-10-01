@@ -6,7 +6,7 @@
 | 문서 종류 | TECH_SPEC (기술 명세) |
 | 작성자 | Sung, Hyun-Joon · Lee, Yelim · ByeongJun Min |
 | 작성일 | 2026-09-28 |
-| 버전 | v0.6.3 |
+| 버전 | v0.7.1 |
 | 기준 PRD | [PRD.md](./PRD.md) v0.6 |
 | 관련 문서 | [API_SPEC.md](./API_SPEC.md) v0.3.1 — 서버 API 상세 명세 |
 
@@ -23,7 +23,10 @@
 | v0.6 | 2026-09-29 | **뉴스 수집을 Google 뉴스 RSS로 교체**(§3.3, §10, 한도 §13, 환경변수에서 `NAVER_*` 삭제). **분석 글을 투자 인사이트로 전환**: `insights`(투자 포인트) 추가, 분량 상한·근거 연결 검사(§11.3~11.5). 주가 API 주소가 **V2**(`GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2`)로 바뀐 것을 반영(§3.2), 상장주식수 필드 확인(T5) |
 | v0.6.1 | 2026-09-29 | (WU-101, 원래 PR #7의 v0.5.1) WU-101 DB 스키마 작성 중 발견: `max_declines_per_day`(회원별 상한, F-U8)를 판정할 컬럼이 없었음 — `decline_stats_daily`는 전체 집계만, `usage_daily`엔 회원별 거절 횟수 컬럼이 없었다. §15.1 `usage_daily`에 `declines` 컬럼 추가. PR #7 합치면서 외부 호출 기록 `provider`의 `naver`를 `news`(Google 뉴스 RSS)로 바꾸는 마이그레이션 추가 |
 | v0.6.2 | 2026-09-30 | WU-114: 한도 표(§13)에 `guest_requests_per_minute`(비로그인 IP당 분당 30) 추가, 분당 요청 제한을 DB에서 센다는 점 명시 |
-| v0.6.4 | 2026-10-01 | **정성 분석: 공시 원문 단락**(§3.1). 분석 글(③) 단계가 대상 기업의 최근 보고서·최근 사업보고서 원문(`document.xml`)을 받아 **사업의 내용·이사의 경영진단·연결재무제표 주석**에서 질문에 맞는 단락(약 1.2만 자)을 골라 AI에 준다(`src/lib/filings`). AI는 단락 ID(`d1`)로 인용하고, 화면은 원문 글자 그대로·DART 링크를 보여 준다. 원인 문장은 뉴스 **또는 공시 원문** 근거가 있으면 남는다. 분석 글 추론 분량 `low`(`OPENAI_EXPLAIN_REASONING`), AI 입력에서 주간 종가·거래량 제외, Vercel 함수 지역 `hnd1`(도쿄, DB와 같은 곳) — 실측은 §11.2 |
+| v0.7.2 | 2026-10-01 | **정성 분석: 공시 원문 단락**(§3.1). 분석 글(③) 단계가 대상 기업의 최근 보고서·최근 사업보고서 원문(`document.xml`)을 받아 **사업의 내용·이사의 경영진단·연결재무제표 주석**에서 질문에 맞는 단락(약 1.2만 자)을 골라 AI에 준다(`src/lib/filings`). AI는 단락 ID(`d1`)로 인용하고, 화면은 원문 글자 그대로·DART 링크를 보여 준다. 원인 문장은 뉴스 **또는 공시 원문** 근거가 있으면 남는다. 분석 글 추론 분량 `low`(`OPENAI_EXPLAIN_REASONING`), AI 입력에서 주간 종가·거래량 제외, Vercel 함수 지역 `hnd1`(도쿄, DB와 같은 곳) — 실측은 §11.2 |
+| v0.7.1 | 2026-10-01 | 분석 글 인사이트·추론(§11.3·§11.5): 주어진 자료 안에서 원인·지속성·다음 분기 흐름을 추론해도 되며, 원인·전망 문장은 추론 표현(예상됩니다·보입니다·추정됩니다·가능성이 있습니다)이 있어야 남고 (추정) 표시 — 단정한 원인 문장·추론 표현 없는 inferred 문장은 버림(`build-explanation.ts` `isHedged`). `EXPLANATION_LIMITS` 결론 최대 15문장·투자 포인트 160자·합계 3,500자, 분석 글 AI 시간 상한 90초. `max_llm_cost_usd_per_question` $0.10 |
+| **v0.7.0** | 2026-10-01 | **투자 리포트**(§12.6): 기업 하나가 대상인 모든 질문에 기본정보·주가·재무·밸류에이션·공시를 함께 계산해 붙이고(`result.report`), 분석 글이 관점별(성장성·수익성·재무 안정성·밸류에이션·주가 흐름·이슈)로 해석한다. 분석 글 분량 상한 결론 최대 5문장·투자 포인트 최대 8개·한 개 130자·합계 1,300자(§11.3), 자리표시자 뒤 조사를 값에 맞춤(§11.4). 캐시 3개 `stock_price_history`·`report_extras`·`company_facts`(§15.4) |
+| v0.6.4 | 2026-10-01 | Phase 5(예림): **조회 시작 분기 2015Q1 → 2016Q1**(§4.3·§4.5 — OpenDART 재무 API에 2015년 1·반기·3분기보고서가 없다, 팀 결정), 종목별 주가 "받았지만 없음" 기록 `price_fetch_state`(§6.6·§15.4), 기업개황 미리 채우기가 개황을 못 받은 기업을 7일 건너뜀 `companies.profile_failed_at`(§15.3) |
 | v0.6.3 | 2026-09-30 | Step 1 점검 반영: 금융사 매출은 원문에 영업수익 합계가 없어 계산 불가로 표시(§7), T6 샘플 기업 확정, "최근 4개 분기" OpenDART 호출 수 실측(§13). OpenDART `bsns_year`는 **보고서 기간이 끝난 해**(12월 외 결산은 사업보고서만 다음 해) — 엔진이 회계연도 시작 해로 바꿔 읽는다(`src/lib/financials/period.ts`). 회원 OpenDART 한도는 그 회원만 막고, 전체 soft limit은 회원 요청을 막는다(§13) |
 
 > 이 문서는 PRD의 "무엇을 만들지"를 "어떻게 만들지"로 옮긴 것이다. 기능 ID(F-xx)는 PRD v0.4의 요구사항 ID를 그대로 쓴다.
@@ -228,7 +231,7 @@ sequenceDiagram
 | `compare` | 최근 1개 분기 (TTM 지표는 최근 4개 분기) |
 | `event` | 최근 12개월 공시 |
 
-3. 범위는 **2015Q1 ~ 최신 보고서**로 자른다. 잘렸으면 결과에 표시한다.
+3. 범위는 **2016Q1 ~ 최신 보고서**로 자른다(`EARLIEST_QUARTER`, `src/lib/ask/quarter.ts`). 잘렸으면 결과에 표시한다. 2015년은 사업보고서만 있고 1·반기·3분기보고서가 OpenDART 재무 API에 없어(013) 분기 값을 만들 수 없다 — Phase 5에서 2015Q1 → 2016Q1로 줄였다(2016Q1의 직전 분기 증감률은 "직전 분기 없음"). 범위 밖 안내 문구(질문 422·보드 422)는 이 값을 따라간다.
 4. YoY 계산에 필요한 전년 동기 값은 보고서의 전기(前期) 값으로 얻으므로 **추가 조회하지 않는다**.
 5. 결과의 분석 기준 바에 "사용 기간 + 선정 이유"를 표시한다.
 
@@ -255,7 +258,7 @@ sequenceDiagram
 | 기업이 상장사 목록에 있는가 | 후보 있으면 되묻기(`CLARIFICATION_NEEDED`), 없으면 지원 불가 |
 | 지표가 지표 목록(§6.4)에 있는가 | "지원하지 않는 지표" + 가능한 지표 예시 |
 | 연산이 허용 목록(§4.4)에 있는가 | 지원 불가 |
-| 기간이 2015Q1~최신 범위인가 | 범위 안으로 조정 후 표시, 전부 벗어나면 오류 |
+| 기간이 2016Q1~최신 범위인가 | 범위 안으로 조정 후 표시, 전부 벗어나면 오류 |
 | 기업 수 ≤ 6 (대상 1 + 경쟁사 5) | 초과 오류 |
 | 조회 행 수가 처리 한도(§12.5) 이하인가 | `TOO_LARGE` |
 
@@ -271,7 +274,7 @@ sequenceDiagram
 | `max_steps_per_question` | 8 |
 | `max_retries_per_step` | 2 (외부 API 오류·시간 초과만 재시도) |
 | `max_seconds_per_question` | 90 |
-| `max_llm_cost_usd_per_question` | 0.01 |
+| `max_llm_cost_usd_per_question` | 0.10 (v0.7.1 — 결론 최대 15문장 인사이트 분석 글. 이전 0.01 → 0.03 → 0.05) |
 | `max_news_search_calls` | 3 |
 | `max_news_bodies` | 5 |
 
@@ -446,6 +449,7 @@ sequenceDiagram
 - 키 중복: 기업 목록(`companies`)에서 결합할 기업의 보통주 코드가 2개 이상이거나 한 코드가 두 기업에 붙어 있으면, 또는 같은 종목·기준일 가격이 2행 이상이면 **모든 기업의 주가 지표를 비우고**(`NO_PRICE`) `result.basis.flags` 맨 앞에 `"주가 결합 중단 — 보통주 종목코드 중복: …"` / `"주가 결합 중단 — 같은 종목·기준일 가격 2행 이상: …"`. 어느 값이 맞는지 고르지 않는다.
 - 우선주: 단축코드 끝자리 5·7·9 또는 종목명 끝 `우`·`우B`·`2우B`·`우(전환)` → 보통주 계산에서 빼고 "제외(우선주 n)"로 센다.
 - 실행 기록: `build_result` 단계 `outputSummary`에 `"주가 결합: 재무 1행 + 주가 1행 → 1행, 제외 0행(우선주 0), 기준일 2026-09-30, 주가 호출 1건"`, 주가 API 호출 수는 단계 `external_calls`.
+- 받은 기록(Phase 5, `price_fetch_state`): 종목 + 기간 끝마다 "받았다"와 받은 행 수를 남긴다. 기간 안 가격이 0행이던 종목(거래정지 등)은 같은 날(지금 기준)·기준일이 지난 뒤(과거 기준)에 다시 부르지 않고 `NO_PRICE`. 행이 있었는데 저장이 안 된 경우(같은 종목·기준일 2행)는 다시 받아 결합 검사가 경고하게 둔다. 표가 없거나 읽지 못해도 예전처럼 부른다.
 
 ---
 
@@ -682,6 +686,23 @@ sequenceDiagram
 - 서버 구현 (WU-401, 예림): `src/lib/boards/` — `parseBoardFilters`(검사) → `applyBoardFilters`(원래 요청에 기간·비교 기업만 덮어쓰기) → `recomputeBoard`(`assertAggregateSize` 뒤 `runAnalysis(…, { base: 원래 데이터 버전, peerComparisonChart: true })`) → `saveBoard`. `base`가 있으면 실행기는 원래 출처의 보고서를 그대로 쓰고 빠진 보고서만 받으며(`ensureCompanyFinancialsOver`), 전처리 선택(최초 공시·별도 통일)은 새로 받은 보고서에만 적용한다. Q9는 `loadBoardResult(analysisId, client)`로 보드 결과(없으면 원래 결과)를 읽는다.
 - 섹터 합계는 DB 함수 `aggregate_sector_metrics(from, to, metrics, by_year, calc_version)`가 `calendar_quarter_metrics` 전체를 DB 안에서 더해 결과 행만 돌려준다(§12.5). 금액 지표 4개(매출·영업이익·순이익·지배주주순이익)만, 연결 우선, 연도별은 1~4분기가 모두 있는 기업만. 서버는 `aggregateSectorMetrics`(한도 검사 뒤 호출, 30초에서 요청을 끊고 시간 초과면 413, 합계는 글자 → bigint)로 부르고, 회원·비로그인은 직접 실행할 수 없다.
 
+### 12.6 투자 리포트 (Phase 5 후속, `src/lib/report/`)
+질문이 무엇이든 **대상 기업 하나**의 투자 판단 자료를 함께 보여 준다. `build_result` 단계 안에서 만든다(시간·비용 상한에 걸리지 않음, 실패해도 질문의 답은 그대로). AI 0 — 숫자는 모두 원문으로 계산하고 분석 글이 `{{f…}}`로 가리킨다. 숫자 ID는 **f100001부터**, 차트 ID는 **r1부터**(질문 결과와 겹치지 않음).
+
+| 칸 | 내용 | 출처 |
+|---|---|---|
+| 핵심 지표 | 현재가(등락률)·시가총액·PER·PBR·ROE·배당수익률·1년 수익률·52주 범위·최대주주 | 아래 칸에서 |
+| 기본 정보 | 종목·시장·업종(섹터, 근거)·결산월·시가총액·상장주식수·최대주주·지분율(특수관계인 포함)·주당 배당금 | 기업 목록 · 주가 · `hyslrSttus`(최근 정기보고서) · `alotMatter`(최근 사업보고서) |
+| 주가·거래 | 현재가·등락률·시가/고가/저가·거래량·거래대금·52주 최고/최저(날짜)·52주 범위 위치·연율 변동성(일간 로그수익률 표준편차 × √252)·20일 평균 거래량 ÷ 1년 평균 / 차트: 1년 주간 종가·기간 수익률(1·3·6개월·1년·연초 대비)·주간 거래량 | 주가 API 1년 일별(종목당 하루 1회, `stock_price_history`) |
+| 재무·실적 | 최근 분기 매출·영업이익·순이익과 YoY·QoQ·영업이익률·ROE(TTM)·부채비율, EPS·ROA·유동비율·매출 연평균 성장률 / 차트: 최근 8분기 실적·분기 영업이익률·5개 사업연도 실적·수익성(영업이익률·순이익률·ROE)·현금흐름(영업현금흐름·설비투자·잉여현금흐름)·재무 안정성(부채비율·유동비율) | 분기 엔진(§6) + 사업보고서 5개·최근 정기보고서의 리포트용 계정(`report_extras`: 유동자산·유동부채·현금·영업현금흐름·유형/무형자산 취득·배당금 지급·기본주당이익) |
+| 밸류에이션 | PER·PBR·PSR(TTM 매출)·PCR(최근 사업연도 영업현금흐름)·배당수익률(주당 배당금 ÷ 현재가)·배당성향, 과거 평균 PER(흑자 사업연도 말)·PBR과 현재의 차이, 경쟁사 PER·PBR **중앙값** / 차트: 사업연도 말 PER·PBR → 현재, 경쟁사 비교 표(시가총액·PER·PBR·ROE·영업이익률) | 사업연도 말 이전 마지막 거래일 종가(`loadPrices` asOf), 경쟁사 = 질문의 비교 기업 또는 같은 섹터 시가총액 상위 3곳(25초 안에 못 받으면 뺌) |
+| 공시 | 최근 12개월 중요 공시 (`issue_rules` 분류) | `get_disclosures` |
+
+- **제공하지 않는 것** (화면에 밝힌다): 외국인·기관 순매수·공매도(무료 공공 데이터에 없음), 사업부문별 매출 비중(보고서 본문 글에만 있음), EV/EBITDA·컨센서스·목표주가·투자의견(데이터 없음 + 투자 권유 금지 원칙).
+- 같은 조건 재실행(Q6)·보드 다시 계산(B2)은 원래 분석의 리포트를 그대로 붙인다(그 시점의 스냅숏 — `src/lib/report/carry.ts`).
+- 분석 글 AI에는 리포트 요약(칸·항목·숫자 ID·공시 제목)과 **핵심 숫자만**(`keyFigureIds`, 주간 차트 점 100여 개는 뺌) 보낸다.
+- 금융업은 유동비율·영업이익률의 뜻이 달라 칸에 주의 문구.
+
 ### 12.5 대용량 처리 한도 (Step 4, F-B4)
 | 항목 | 한도 | 넘으면 |
 |---|---|---|
@@ -767,7 +788,7 @@ sequenceDiagram
 ### 15.3 기업·섹터
 | 테이블 | 주요 컬럼 |
 |---|---|
-| `companies` 🗄️ | `corp_code`, `stock_code`, `corp_name`, `market`, `induty_code`, `sector_id`, `sector_source`, `acc_mt`, `updated_at` |
+| `companies` 🗄️ | `corp_code`, `stock_code`, `corp_name`, `market`, `induty_code`, `sector_id`, `sector_source`, `acc_mt`, `updated_at`, `profile_checked_at`, `profile_failed_at`(기업개황 미리 채우기가 개황을 못 받은 시각 — 7일 건너뜀, Phase 5) |
 | `sectors`, `sector_overrides`, `sector_rules` 🗄️ | §8 |
 
 ### 15.4 수집 데이터
@@ -779,6 +800,10 @@ sequenceDiagram
 | `account_map` 🗄️ | `metric`, `priority`, `account_id`, `account_nm`, `industry_type` |
 | `disclosures` 🗄️ | `rcept_no`, `corp_code`, `report_nm`, `rcept_dt`, `pblntf_ty`, `issue_tag`, `importance`, `is_correction` |
 | `stock_prices` 🗄️ | `stock_code`, `base_date`, `close_price`, `listed_shares`, `fetched_at` |
+| `stock_price_history` 🗄️ | `stock_code`, `days`(1년 일별 시세 jsonb), `fetched_at` — 투자 리포트(§12.6), 하루 1회 |
+| `report_extras` 🗄️ | `corp_code`, `bsns_year`, `reprt_code`, `fs_div`(null = 아직 없음, 하루 뒤 재확인), `rcept_no`, `values`(리포트용 계정 jsonb) |
+| `company_facts` 🗄️ | `corp_code`, `kind`(`shareholder`·`dividend`), `bsns_year`, `reprt_code`, `data` — 같은 보고서면 다시 부르지 않음 |
+| `price_fetch_state` 🗄️ | `stock_code`, `range_to`, `range_from`, `row_count`(0 = 받았지만 없음), `fetched_at` — 종목별 주가 받은 기록 (§6.6, Phase 5) |
 | `news_search_cache` 🗄️ | `query_hash`, `items`(제목·링크·요약문·발행일만), `fetched_at` (6시간) |
 | `robots_cache` 🗄️ | `domain`, `rules`, `fetched_at` |
 | `data_issues` 🗄️ | `corp_code`, `kind`, `detail`, `created_at` |

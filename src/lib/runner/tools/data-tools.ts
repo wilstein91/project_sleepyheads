@@ -2,13 +2,15 @@
 // 계산은 Step 1·2 실행기(runAnalysis)를 그대로 쓴다 — 단계로 나눠도 숫자가 한 번에 실행할 때와 같다.
 // 도구는 던지지 않는다: 외부 API의 일시적 오류·시간 초과만 `retryable: true` (PHASE2_PLAN §3.1).
 import "server-only";
-import type { CompanyRef } from "@/contracts";
+import type { AnalysisRequestView, CompanyRef, ResultObject } from "@/contracts";
 import { ensureDisclosures } from "@/lib/disclosures/sync";
 import { UpstreamApiError } from "@/lib/quota/errors";
 import { pickPeers } from "@/lib/sector/peers";
 import { ensureCompanyFinancials } from "../company-financials";
 import { fetchEventDisclosures } from "../disclosures-tool";
 import { runAnalysis } from "../execute";
+import { buildCompanyReport } from "@/lib/report/build";
+import { isReportFigureId } from "@/lib/report/ids";
 import { outputsOf, type Tool, type ToolContext, type ToolOutcome } from "./types";
 
 const NO_USAGE = { externalCalls: 0, llmCostUsd: 0 };
@@ -152,7 +154,12 @@ export const buildResult: Tool<"build_result"> = async (_input, ctx) => {
     if (outcome.kind === "needs_preprocess") {
       return { status: "needs_preprocess", diagnoses: outcome.diagnoses };
     }
-    const unavailable = Object.values(outcome.result.figures).filter((f) => f.reason).length;
+    // 투자 리포트 (Phase 5 후속): 질문이 무엇이든 대상 기업의 기본정보·주가·재무·밸류에이션·공시를 붙인다.
+    // 이 단계는 시간·비용 상한에 걸리지 않는다(결과의 일부). 리포트가 실패해도 질문의 답은 그대로 낸다
+    const report = await attachReport(outcome.result, request, ctx);
+    // 질문 결과의 숫자만 센다 (리포트 숫자는 리포트 요약 줄에)
+    const own = Object.entries(outcome.result.figures).filter(([id]) => !isReportFigureId(id));
+    const unavailable = own.filter(([, f]) => f.reason).length;
     return {
       status: "succeeded",
       output: {
@@ -163,13 +170,42 @@ export const buildResult: Tool<"build_result"> = async (_input, ctx) => {
       },
       inputSummary: `${request.metrics.join("·")}, ${request.groupBy} 묶음${request.peers.length > 0 ? `, 비교 ${request.peers.length}곳` : ""}`,
       outputSummary: [
-        `차트 ${outcome.result.charts.length}개, 숫자 ${Object.keys(outcome.result.figures).length}개${unavailable > 0 ? ` (계산 불가 ${unavailable}개)` : ""}`,
+        `차트 ${outcome.result.charts.length}개, 숫자 ${own.length}개${unavailable > 0 ? ` (계산 불가 ${unavailable}개)` : ""}`,
         // 주가 결합 전후 행 수 (WU-502, TECH §6.6 "기록")
         ...(outcome.priceJoin ? [outcome.priceJoin.summary] : []),
+        `투자 리포트: ${report.summary}`,
       ].join(" · "),
-      usage: { externalCalls: outcome.priceJoin?.externalCalls ?? 0, llmCostUsd: 0 },
+      usage: {
+        externalCalls: (outcome.priceJoin?.externalCalls ?? 0) + report.externalCalls,
+        llmCostUsd: 0,
+      },
     };
   } catch (err) {
     return failure(err);
   }
 };
+
+/** 리포트를 만들어 결과에 붙인다 (숫자 ID는 f100001부터라 질문 결과와 겹치지 않는다) */
+async function attachReport(
+  result: ResultObject,
+  request: AnalysisRequestView,
+  ctx: ToolContext,
+): Promise<{ summary: string; externalCalls: number }> {
+  try {
+    const built = await buildCompanyReport(request.target, {
+      client: ctx.client,
+      userId: ctx.userId,
+      analysisId: ctx.analysisId,
+      peers: request.peers.length > 0 ? request.peers : undefined,
+    });
+    result.report = built.report;
+    result.figures = { ...result.figures, ...built.figures };
+    return { summary: built.summary, externalCalls: built.externalCalls };
+  } catch (err) {
+    console.error(`[report] 투자 리포트 실패 (${request.target.name})`, err);
+    return {
+      summary: `만들지 못함 (${err instanceof Error ? err.message : String(err)})`,
+      externalCalls: 0,
+    };
+  }
+}
