@@ -269,6 +269,50 @@ export interface CompanyMetricSample {
   fsDiv: FsDiv;
 }
 
+/**
+ * groupBy = "quarter" | "year"인데 기업이 여럿 ("삼성전자와 SK하이닉스 최근 4분기 영업이익 비교해줘"):
+ * 같은 분기(연도) 축에 기업마다 선 하나씩 — 대상 기업만 그리면 비교 기업 값이 답에서 빠진다.
+ * Series key는 `지표:corpCode`(차트·표 칸 이름이 겹치지 않게), 이름과 숫자 이름 앞에 기업명을 붙인다.
+ * 순서는 지표 → 기업 (같은 지표의 기업들이 나란히). 분기는 기업마다 자기가 뺀 분기만 뺀다.
+ */
+export function buildMultiCompanyPeriodSeries(
+  samples: CompanyMetricSample[],
+  quartersOf: (corpCode: string) => Quarter[],
+  metrics: MetricId[],
+  allocator: FigureAllocator,
+  byYear: boolean,
+): BuildQuarterlyResult {
+  const reportsUsed = new Set<string>();
+  const perCompany = samples.map((sample) => {
+    const { name } = sample.company;
+    const named: FigureAllocator = {
+      figures: allocator.figures,
+      add: (input) => allocator.add({ ...input, label: `${name} ${input.label}` }),
+    };
+    const build = byYear ? buildAnnualSeries : buildQuarterlySeries;
+    const built = build(
+      sample.financials,
+      sample.fsDiv,
+      quartersOf(sample.company.corpCode),
+      metrics,
+      named,
+    );
+    for (const report of built.reportsUsed) reportsUsed.add(report);
+    return built.series.map((s): Series => ({
+      ...s,
+      key: `${s.key}:${sample.company.corpCode}`,
+      label: `${name} ${s.label}`,
+    }));
+  });
+
+  const series: Series[] = [];
+  const metricCount = Math.max(0, ...perCompany.map((list) => list.length));
+  for (let i = 0; i < metricCount; i++) {
+    for (const list of perCompany) if (list[i]) series.push(list[i]);
+  }
+  return { series, reportsUsed };
+}
+
 export interface BuildComparisonResult extends BuildQuarterlyResult {
   /** 비교 그래프에 그릴 Series — 금융사가 있으면 부채비율 대신 자기자본비율 (TECH §7). 표는 `series` 전부 */
   chartSeries: Series[];
