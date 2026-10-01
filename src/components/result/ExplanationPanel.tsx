@@ -38,13 +38,18 @@ const KST_DATE = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
 });
 
+/** 공시 원문 링크는 DART 뷰어 주소만 (서버가 접수번호로 만든 것, TECH §10.2와 같은 원칙) */
+function isDartViewerUrl(url: string): boolean {
+  return url.startsWith("https://dart.fss.or.kr/dsaf001/main.do?rcpNo=");
+}
+
 function kstDate(iso: string): string {
   const time = Date.parse(iso);
   return Number.isNaN(time) ? "" : KST_DATE.format(time);
 }
 
 /**
- * 오른쪽 분석 글 (PRD F-V6, F-V11~F-V13): 결론 → 투자 포인트 → 근거 숫자(접힘) → 뉴스 단서 → 주의사항.
+ * 오른쪽 분석 글 (PRD F-V6, F-V11~F-V13): 결론 → 투자 포인트 → 근거 숫자(접힘) → 공시 원문 근거 → 뉴스 단서 → 주의사항.
  * 결론 + 투자 포인트는 스마트폰 한 화면 안에 들어가야 한다 (data-testid="explanation-main").
  */
 export function ExplanationPanel({
@@ -104,6 +109,28 @@ export function ExplanationPanel({
     item?.scrollIntoView({ behavior: "smooth", block: "center" });
     item?.focus({ preventScroll: true });
   };
+  // 투자 포인트가 근거로 단 공시 원문 단락 → 아래 "공시 원문 근거"의 몇 번째인지
+  const filingClues = explanation.filingClues ?? [];
+  const filingOrder = new Map(filingClues.map((f, i) => [f.filingId, i + 1]));
+  const showFiling = (filingId: string) => {
+    const item = document.getElementById(`filing-clue-${filingId}`);
+    item?.scrollIntoView({ behavior: "smooth", block: "center" });
+    item?.focus({ preventScroll: true });
+  };
+  const filingButtons = (filingIds: string[] | undefined) =>
+    (filingIds ?? [])
+      .filter((id) => filingOrder.has(id))
+      .map((id) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => showFiling(id)}
+          className="ml-1.5 whitespace-nowrap text-sm text-accent underline underline-offset-4"
+          aria-label={`근거 공시 원문 ${filingOrder.get(id)}번 보기`}
+        >
+          원문 {filingOrder.get(id)}
+        </button>
+      ));
   // 링크(a)가 아니라 버튼 — 분석 글 안의 링크는 RSS가 준 기사 주소뿐이어야 한다 (TECH §10.2)
   const newsButtons = (newsIds: string[]) =>
     newsIds
@@ -179,13 +206,16 @@ export function ExplanationPanel({
                             title={
                               insight.newsIds.length > 0
                                 ? "뉴스 보도를 바탕으로 한 추정입니다 — 확인된 사실이 아닙니다"
-                                : "숫자를 바탕으로 한 해석이 들어간 문장입니다"
+                                : (insight.filingIds?.length ?? 0) > 0
+                                  ? "회사 공시 내용을 바탕으로 한 해석입니다"
+                                  : "숫자를 바탕으로 한 해석이 들어간 문장입니다"
                             }
                           >
                             (추정)
                           </span>
                         )}
                         {chartButton(insight.chartRef, "차트 보기")}
+                        {filingButtons(insight.filingIds)}
                         {newsButtons(insight.newsIds)}
                       </p>
                     </li>
@@ -214,6 +244,56 @@ export function ExplanationPanel({
             ))}
           </ul>
         </details>
+      )}
+
+      {filingClues.length > 0 && (
+        <section aria-labelledby="exp-filings" data-testid="filing-clues">
+          <h3 id="exp-filings" className="font-semibold">
+            공시 원문 근거
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            회사가 금융감독원 전자공시(DART)에 낸 보고서의 원문 그대로입니다. 분석 글은 이 내용을
+            요약·해석한 것입니다.
+          </p>
+          <ul className="mt-2 space-y-3">
+            {filingClues.map((f, i) => (
+              <li
+                key={f.filingId}
+                id={`filing-clue-${f.filingId}`}
+                tabIndex={-1}
+                data-testid="filing-clue"
+                className="scroll-mt-4 rounded-md outline-offset-4 focus:outline-2 focus:outline-accent"
+              >
+                <p className="text-sm font-medium">
+                  <span className="mr-1.5 inline-block rounded bg-accent-soft px-1.5 text-xs font-semibold leading-5 text-accent">
+                    원문 {i + 1}
+                  </span>
+                  {f.reportName} · {f.section}
+                </p>
+                {f.relevance && <p className="mt-1 text-sm leading-6">{f.relevance}</p>}
+                <details className="group mt-1">
+                  <summary className="cursor-pointer text-sm text-muted underline underline-offset-4">
+                    원문 단락 보기
+                  </summary>
+                  <p className="mt-1 max-h-64 overflow-y-auto whitespace-pre-line break-words rounded-md border border-line bg-surface p-3 text-sm leading-6">
+                    {f.excerpt}
+                  </p>
+                </details>
+                {isDartViewerUrl(f.url) && (
+                  <a
+                    href={f.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-sm text-accent underline underline-offset-4"
+                  >
+                    DART에서 보고서 전체 보기
+                    <span className="sr-only"> (새 탭에서 열림)</span>
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {explanation.newsClues.length > 0 && (

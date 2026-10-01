@@ -200,6 +200,36 @@ describe("dartFetchBinary (WU-103 — corpCode.xml 등 ZIP 응답용)", () => {
     );
   });
 
+  it("공시서류원본(document.xml)의 XML 오류(<status>013</status>)도 DartApiError로 던진다", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/xml;charset=UTF-8" },
+      text: async () =>
+        '<?xml version="1.0" encoding="UTF-8"?><result><status>013</status><message>접수번호 오류</message></result>',
+    } as unknown as Response);
+    const { client } = createFakeSupabase();
+
+    await expect(
+      dartFetchBinary("document.xml", { rcept_no: "1" }, { client }),
+    ).rejects.toMatchObject({ status: "013", message: "접수번호 오류" });
+  });
+
+  it("정상 원문 ZIP(application/x-msdownload)은 XML 오류로 보지 않는다", async () => {
+    const bytes = new TextEncoder().encode("zip").buffer;
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/x-msdownload;charset=UTF-8" },
+      arrayBuffer: async () => bytes,
+    } as unknown as Response);
+    const { client } = createFakeSupabase();
+
+    await expect(dartFetchBinary("document.xml", { rcept_no: "1" }, { client })).resolves.toBe(
+      bytes,
+    );
+  });
+
   it("오늘 이미 020으로 차단됐으면 외부 호출 없이 QuotaExceededError", async () => {
     const fetchSpy = vi.spyOn(global, "fetch");
     const { client } = createFakeSupabase({ blockedAt: new Date().toISOString() });

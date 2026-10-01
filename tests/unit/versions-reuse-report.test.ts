@@ -23,6 +23,8 @@ function explanation(themed: boolean): Explanation {
     ],
     evidence: [],
     newsClues: [],
+    // 공시 원문 근거 칸이 있는 글만 재사용한다 (versions-reuse.test.ts)
+    filingClues: [],
     caveats: [],
     label: "AI 작성",
   };

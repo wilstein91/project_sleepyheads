@@ -74,10 +74,20 @@ export async function dartFetchBinary(
 
   return runDartRequest(url, timeoutMs, options.analysisId ?? null, async (res) => {
     // 오류일 때는 ZIP이 아니라 {status, message} JSON을 돌려준다(OpenDART 공식 동작).
-    if ((res.headers.get("content-type") ?? "").includes("json")) {
+    // 공시서류원본(`document.xml`)은 오류를 `<result><status>013</status>…` XML로 준다 (2026-10-01 확인,
+    // 정상 ZIP은 application/x-msdownload)
+    const type = res.headers.get("content-type") ?? "";
+    if (type.includes("json")) {
       const body = (await res.json()) as DartEnvelope;
       if (body.status === "020") await markDartBlockedToday(client);
       throw new DartApiError(body.status, body.message);
+    }
+    if (/\bxml\b/.test(type) && !type.includes("msdownload")) {
+      const text = await res.text();
+      const status = /<status>\s*(\d{3})\s*<\/status>/.exec(text)?.[1] ?? "900";
+      const message = /<message>([\s\S]*?)<\/message>/.exec(text)?.[1]?.trim();
+      if (status === "020") await markDartBlockedToday(client);
+      throw new DartApiError(status, message);
     }
     return res.arrayBuffer();
   });

@@ -143,7 +143,8 @@ export function estimateExternalCalls(
         // 검색 1회 + 본문 최대 5건 (TECH §4.7 max_news_bodies) + 요지 AI 1회
         return sum + 7;
       case "write_explanation":
-        return sum + 1;
+        // AI 1회 + 공시 원문 최대 2건 (최근 보고서·최근 사업보고서, src/lib/filings)
+        return sum + 3;
       default:
         return sum;
     }

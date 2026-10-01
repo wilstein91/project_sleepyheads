@@ -3,18 +3,22 @@
 // "설명 생성 실패"만 표시한다(§11.5, F-N7). 실패 처리는 이 함수 안에서 끝낸다.
 import "server-only";
 import type { Chart, Explanation, Figure, NewsClue, ResultObject } from "@/contracts";
+import type { FilingPassage } from "@/lib/filings/passages";
 import { llmCall, type LlmUsage } from "@/lib/llm/client";
 import { AI_EXPLANATION_JSON_SCHEMA, aiExplanationSchema } from "./ai-explanation";
 import { buildExplanation, failedExplanation } from "./build-explanation";
 import { chooseExplainModel } from "./model";
 import { isReportFigureId } from "@/lib/report/ids";
 import { buildExplainPrompt, summarizeCharts, summarizeFigures, summarizeReport } from "./prompt";
+import { explainReasoningEffort } from "./reasoning";
 
 export interface GenerateExplanationInput {
   question: string;
   result: ResultObject;
   /** 앞 단계 search_news가 고른 단서 (없으면 빈 배열) — 뉴스 근거 없이는 원인 추정을 하지 않는다. */
   newsClues?: NewsClue[];
+  /** 공시 원문 단락 (src/lib/filings, 없으면 빈 배열) — 회사가 직접 쓴 사업·실적 설명 */
+  filings?: FilingPassage[];
   /** TECH §4.11.1 — 범위 안 질문에 범위 밖 요청이 섞였는가 (analyses.mixed_scope). */
   mixedScope: boolean;
   userId?: string | null;
@@ -42,6 +46,7 @@ export async function generateExplanationWithUsage(
   input: GenerateExplanationInput,
 ): Promise<GeneratedExplanation> {
   const newsClues = input.newsClues ?? [];
+  const filings = input.filings ?? [];
   let llmCostUsd = 0;
 
   try {
@@ -52,8 +57,10 @@ export async function generateExplanationWithUsage(
         `[explain:${input.analysisId ?? "unknown"}] 기본 모델로 작성 (${choice.fallbackReason})`,
       );
     }
+    const effort = explainReasoningEffort();
     const { output, usage } = await llmCall<unknown>({
       ...(choice.model ? { model: choice.model } : {}),
+      ...(effort ? { reasoningEffort: effort } : {}),
       // 결론 최대 15문장 + 투자 포인트 8개 — 기본 30초로는 모자랄 수 있다 (POST /step 300초 안)
       timeoutMs: EXPLAIN_TIMEOUT_MS,
       userId: input.userId ?? null,
@@ -70,6 +77,7 @@ export async function generateExplanationWithUsage(
           press: n.press,
           publishedAt: n.publishedAt,
         })),
+        filings,
       }),
       schema: { name: "explanation", schema: AI_EXPLANATION_JSON_SCHEMA, strict: true },
     });
@@ -85,6 +93,7 @@ export async function generateExplanationWithUsage(
       charts: allCharts(input.result),
       newsClues,
       hasNews: newsClues.length > 0,
+      filings,
       mixedScope: input.mixedScope,
       unavailableNotes: (input.result.basis?.flags ?? []).filter((f) =>
         f.startsWith(UNAVAILABLE_PREFIX),

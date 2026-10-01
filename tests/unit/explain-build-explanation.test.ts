@@ -474,3 +474,109 @@ describe("buildExplanation — 뉴스 근거 (WU-305)", () => {
     expect(result.newsClues.map((n) => n.newsId)).toEqual(["n2", "n1"]);
   });
 });
+
+describe("buildExplanation — 공시 원문 근거 (2026-10-01)", () => {
+  const FILINGS = [
+    {
+      id: "d1",
+      kind: "business" as const,
+      reportName: "2026 반기보고서",
+      rceptNo: "20260814003509",
+      section: "II. 사업의 내용 › 7. 기타 참고사항",
+      text: "2분기는 AI 인프라 투자 확대에 따른 수요 강세로 가격 상승세가 이어졌습니다.",
+    },
+    {
+      id: "d2",
+      kind: "notes" as const,
+      reportName: "2026 반기보고서",
+      rceptNo: "20260814003509",
+      section: "주석 4. 영업부문 (연결)",
+      text: "연결회사는 단일영업부문으로 구성되어 있습니다.",
+    },
+  ];
+  const build = (ai: AiExplanation) =>
+    buildExplanation({
+      ai,
+      figures: FIGURES,
+      charts: CHARTS,
+      newsClues: [],
+      hasNews: false,
+      filings: FILINGS,
+      mixedScope: false,
+    });
+  const insight = (overrides: Partial<AiExplanation["insights"][number]>) => ({
+    kind: "positive" as const,
+    text: "회사는 수요 강세 때문에 가격이 올랐다고 설명합니다.",
+    figure_ids: [],
+    news_ids: [],
+    filing_ids: ["d1"],
+    chart_ref: null,
+    inferred: false,
+    ...overrides,
+  });
+
+  it("공시 원문을 근거로 단 원인 문장은 뉴스가 없어도 남고, 인용한 단락만 원문 그대로·DART 주소로 붙는다", () => {
+    const result = build(
+      baseAi({
+        insights: [insight({})],
+        filing_clues: [{ filing_id: "d1", relevance: "회사가 분기 실적 배경을 설명합니다." }],
+      }),
+    );
+    expect(result.insights).toHaveLength(1);
+    expect(result.insights[0].filingIds).toEqual(["d1"]);
+    expect(result.filingClues).toEqual([
+      {
+        filingId: "d1",
+        reportName: "2026 반기보고서",
+        section: "II. 사업의 내용 › 7. 기타 참고사항",
+        excerpt: FILINGS[0].text,
+        url: "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260814003509",
+        relevance: "회사가 분기 실적 배경을 설명합니다.",
+      },
+    ]);
+  });
+
+  it("근거 없는 원인 문장·없는 단락 ID는 버린다", () => {
+    const result = build(
+      baseAi({
+        insights: [insight({ filing_ids: [] }), insight({ filing_ids: ["d9"] })],
+        filing_clues: [{ filing_id: "d9", relevance: "없는 단락" }],
+      }),
+    );
+    expect(result.insights).toEqual([]);
+    expect(result.filingClues).toEqual([]);
+  });
+
+  it("결론의 원인 문장도 인용한 단락이 있으면 남는다", () => {
+    const result = build(
+      baseAi({
+        conclusion: ["영업이익이 {{f1}} 늘었습니다.", "회사는 수요 강세 때문이라고 설명합니다."],
+        filing_clues: [{ filing_id: "d1", relevance: "실적 배경" }],
+      }),
+    );
+    expect(result.conclusion).toHaveLength(2);
+    expect(result.filingClues?.map((f) => f.filingId)).toEqual(["d1"]);
+  });
+
+  it("한 줄 설명에 숫자·주소가 있으면 설명만 비운다 (원문 단락은 그대로)", () => {
+    const result = build(
+      baseAi({
+        insights: [insight({ filing_ids: ["d1", "d2"] })],
+        filing_clues: [
+          { filing_id: "d1", relevance: "가격이 35% 올랐습니다." },
+          { filing_id: "d2", relevance: "자세한 내용은 www.example.com" },
+        ],
+      }),
+    );
+    expect(result.filingClues?.map((f) => [f.filingId, f.relevance])).toEqual([
+      ["d1", ""],
+      ["d2", ""],
+    ]);
+  });
+
+  it("filing 칸이 없는 옛 응답(가짜 AI·저장된 글)도 그대로 받는다", () => {
+    const result = build(baseAi());
+    expect(result.status).toBe("ready");
+    expect(result.filingClues).toEqual([]);
+  });
+});

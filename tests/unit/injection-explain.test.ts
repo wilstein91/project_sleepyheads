@@ -168,7 +168,8 @@ describe("③ 설명 작성 — 기사·공시 속 명령문 (WU-504)", () => {
     await generateExplanationWithUsage(input);
     const [request] = llm.requests;
     expect(Object.keys(request).sort()).toEqual(
-      ["analysisId", "input", "model", "schema", "timeoutMs", "userId"].sort(),
+      // reasoningEffort = 추론 분량(속도, src/lib/explain/reasoning.ts)·timeoutMs — 도구 칸이 아니다
+      ["analysisId", "input", "model", "reasoningEffort", "schema", "timeoutMs", "userId"].sort(),
     );
     expect(JSON.stringify(request)).not.toMatch(/"tools"|"tool_choice"|"functions"/);
     // 출력은 JSON 스키마로만 (Structured Outputs, strict)

@@ -5,14 +5,16 @@ import type { NewsClue } from "@/contracts";
 // WU-304 search_news · WU-305 write_explanation 도구 — 가짜 ctx·가짜 뉴스 모듈로 (실제 RSS·AI·DB 없음).
 // 실제 RSS 처리는 news-find.test.ts, 저장 표는 tests/unit/db/news-clues.test.ts.
 
-const { findNewsCluesMock, saveNewsCluesMock, generateMock } = vi.hoisted(() => ({
+const { findNewsCluesMock, saveNewsCluesMock, generateMock, findFilingsMock } = vi.hoisted(() => ({
   findNewsCluesMock: vi.fn(),
   saveNewsCluesMock: vi.fn(),
   generateMock: vi.fn(),
+  findFilingsMock: vi.fn(),
 }));
 vi.mock("@/lib/news", () => ({ findNewsClues: findNewsCluesMock }));
 vi.mock("@/lib/news/store", () => ({ saveNewsClues: saveNewsCluesMock }));
 vi.mock("@/lib/explain/generate", () => ({ generateExplanationWithUsage: generateMock }));
+vi.mock("@/lib/filings", () => ({ findFilingPassages: findFilingsMock }));
 
 const { searchNews, writeExplanation } = await import("@/lib/runner/tools/news-tools");
 
@@ -44,7 +46,11 @@ const INPUT = {
 const client = { tag: "admin-client" };
 function ctx(overrides: Record<string, unknown> = {}) {
   return {
-    request: { peers: [] },
+    request: {
+      peers: [],
+      target: { name: "SK하이닉스", corpCode: "00164779" },
+      metrics: ["operating_income"],
+    },
     question: "SK하이닉스 영업이익 왜 늘었어?",
     mixedScope: false,
     analysisId: "an-1",
@@ -57,6 +63,8 @@ function ctx(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  findFilingsMock.mockReset();
+  findFilingsMock.mockResolvedValue({ passages: [], externalCalls: 0, note: "공시 원문 없음" });
   findNewsCluesMock.mockReset();
   saveNewsCluesMock.mockReset();
   generateMock.mockReset();
@@ -233,7 +241,7 @@ describe("write_explanation (WU-305)", () => {
     );
     expect(outcome).toMatchObject({
       status: "succeeded",
-      inputSummary: "숫자 2개, 뉴스 2건",
+      inputSummary: "숫자 2개, 뉴스 2건, 공시 원문 없음",
       outputSummary: "분석 글 작성",
       usage: { externalCalls: 0, llmCostUsd: 0.0021 },
     });
@@ -263,9 +271,70 @@ describe("write_explanation (WU-305)", () => {
 
     expect(outcome).toMatchObject({
       status: "succeeded",
-      inputSummary: "숫자 2개, 뉴스 0건",
+      inputSummary: "숫자 2개, 뉴스 0건, 공시 원문 없음",
       outputSummary: "설명 생성 실패 (차트·표는 그대로)",
       usage: { llmCostUsd: 0.001 },
     });
+  });
+  it("대상 기업의 재무 출처로 공시 원문 단락을 찾아 넘기고, 원문 받기를 외부 호출로 센다", async () => {
+    const passage = {
+      id: "d1",
+      kind: "business",
+      reportName: "2026 반기보고서",
+      rceptNo: "20260814003509",
+      section: "II. 사업의 내용 › 7. 기타 참고사항",
+      text: "2분기는 AI 인프라 투자 확대에 따른 수요 강세가 이어졌습니다.",
+    };
+    findFilingsMock.mockResolvedValue({
+      passages: [passage],
+      externalCalls: 2,
+      note: "공시 원문 2건에서 1단락",
+    });
+    generateMock.mockResolvedValue({
+      explanation: { status: "ready", label: "AI 작성", filingClues: [{ filingId: "d1" }] },
+      llmCostUsd: 0.03,
+    });
+    const sources = [
+      {
+        corpCode: "00164779",
+        bsnsYear: 2026,
+        reprtCode: "11012",
+        fsDiv: "CFS",
+        rceptNo: "20260814003509",
+      },
+    ];
+    const previous = [
+      { seq: 1, tool: "get_financials", output: { companies: [], sources } },
+      built,
+    ];
+
+    const outcome = await writeExplanation({} as never, ctx({ previous }));
+
+    expect(findFilingsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        corpCode: "00164779",
+        sources,
+        metrics: ["operating_income"],
+        question: "SK하이닉스 영업이익 왜 늘었어?",
+      }),
+    );
+    expect(generateMock.mock.calls[0][0].filings).toEqual([passage]);
+    expect(outcome).toMatchObject({
+      status: "succeeded",
+      inputSummary: "숫자 2개, 뉴스 0건, 공시 원문 2건에서 1단락",
+      outputSummary: "분석 글 작성 (공시 원문 1단락 근거)",
+      usage: { externalCalls: 2, llmCostUsd: 0.03 },
+    });
+  });
+
+  it("공시 원문 찾기가 던져도 단락 없이 분석 글을 쓴다", async () => {
+    findFilingsMock.mockRejectedValue(new Error("boom"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    generateMock.mockResolvedValue({ explanation: { status: "ready" }, llmCostUsd: 0 });
+
+    const outcome = await writeExplanation({} as never, ctx({ previous: [built] }));
+
+    expect(generateMock.mock.calls[0][0].filings).toEqual([]);
+    expect(outcome).toMatchObject({ status: "succeeded", usage: { externalCalls: 0 } });
   });
 });

@@ -367,6 +367,7 @@ interface Insight {
   text: string;                    // 서버가 숫자를 채운 완성 문장 (80자 이내)
   figureIds: string[];             // 근거 숫자 ID — figureIds·newsIds 중 하나 이상 필수
   newsIds: string[];               // 근거 뉴스 ID (Step 3부터)
+  filingIds?: string[];            // 근거 공시 원문 단락 ID (2026-10-01, 옛 분석 글에는 없음)
   chartRef: string | null;         // 근거 차트 ("해당 차트 보기")
   inferred: boolean;               // 추정이 들어간 문장 → 화면에 "추정" 표시
 }
@@ -386,9 +387,20 @@ interface Explanation {
   insights: Insight[];             // 투자 포인트 2~4개 (근거 연결 검사를 통과한 것만)
   evidence: { text: string; chartRef: string | null }[];
   newsClues: NewsClue[];
+  filingClues?: FilingClue[];      // 분석 글이 인용한 공시 원문 단락 (2026-10-01)
   caveats: string[];
   label: "AI 작성";
   failureMessage?: string;         // status = failed일 때 "설명 생성 실패"
+}
+
+// 공시 원문 근거 — 사업보고서·분기보고서의 사업의 내용·경영진단·주석 단락 (TECH §3.1)
+interface FilingClue {
+  filingId: string;                // "d1"
+  reportName: string;              // "2026 반기보고서"
+  section: string;                 // "II. 사업의 내용 › 7. 기타 참고사항"
+  excerpt: string;                 // 원문 글자 그대로 (AI가 고친 글 아님)
+  url: string;                     // DART 원문 뷰어 주소 (서버가 접수번호로 만든 것만)
+  relevance: string;               // 이 단락이 보여 주는 것 (AI, 숫자 없음 — 숫자·주소가 있으면 빈 문자열)
 }
 ```
 

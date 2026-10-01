@@ -11,6 +11,25 @@ export interface NewsClue {
   gist: string;
 }
 
+/**
+ * 공시 원문 근거 (사업보고서·분기보고서의 사업의 내용·경영진단·주석 단락). `excerpt`는 원문 글자 그대로 —
+ * AI가 고쳐 쓴 글이 아니다. 화면은 이 글자와 DART 원문 링크를 보여 준다
+ */
+export interface FilingClue {
+  /** "d1"부터 — 투자 포인트의 filingIds가 가리킨다 */
+  filingId: string;
+  /** "2026 반기보고서" */
+  reportName: string;
+  /** "II. 사업의 내용 › 7. 기타 참고사항" */
+  section: string;
+  /** 원문 단락 그대로 */
+  excerpt: string;
+  /** DART 원문 뷰어 주소 (서버가 접수번호로 만든 것만) */
+  url: string;
+  /** 이 단락이 무엇을 보여 주는지 (AI 작성, 숫자 없음) */
+  relevance: string;
+}
+
 /** 긍정 요인 / 위험 요인 / 다음에 확인할 점 */
 export type InsightKind = "positive" | "risk" | "watch";
 
@@ -29,6 +48,8 @@ export interface Insight {
   figureIds: string[];
   /** 근거 뉴스 ID (Step 3부터) */
   newsIds: string[];
+  /** 근거 공시 원문 단락 ID (없으면 빈 배열 — 이 필드가 생기기 전에 저장된 분석 글에는 없다) */
+  filingIds?: string[];
   /** 근거 차트 ("해당 차트 보기") */
   chartRef: string | null;
   /** 추정이 들어간 문장 → 화면에 "추정" 표시 */
@@ -57,6 +78,8 @@ export interface Explanation {
   insights: Insight[];
   evidence: { text: string; chartRef: string | null }[];
   newsClues: NewsClue[];
+  /** 분석 글이 근거로 쓴 공시 원문 단락 (없으면 빈 배열·없음) */
+  filingClues?: FilingClue[];
   caveats: string[];
   label: "AI 작성";
   /** status = failed일 때 "설명 생성 실패" */

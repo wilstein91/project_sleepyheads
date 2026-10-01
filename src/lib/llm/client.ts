@@ -66,6 +66,11 @@ export interface LlmCallRequest {
   /** Structured Outputs로 강제할 JSON 스키마 (TECH §4.2, §11.3, §11.5 "출력 제한"). 생략하면 평문. */
   schema?: LlmJsonSchema;
   model?: string;
+  /**
+   * 추론 모델의 생각 분량 (Responses API `reasoning.effort`). 생략하면 모델 기본값. 분석 글은 "low" —
+   * 2026-10-01 실측(gpt-6-sol, 같은 입력): 기본 13.7~14.8초 → low 7.6~7.7초, 글 품질 차이 없음
+   */
+  reasoningEffort?: "low" | "medium" | "high";
   timeoutMs?: number;
   /** 테스트에서 가짜 Supabase 클라이언트를 주입할 때만 쓴다. */
   client?: SupabaseClient;
@@ -183,6 +188,7 @@ async function requestOnce(
         body: JSON.stringify({
           model,
           input: request.input,
+          ...(request.reasoningEffort ? { reasoning: { effort: request.reasoningEffort } } : {}),
           ...(request.schema
             ? {
                 text: {

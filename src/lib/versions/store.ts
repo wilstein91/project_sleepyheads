@@ -141,11 +141,14 @@ export async function findReusableExplanation(
     report_price_date?: string | null;
   }[];
   const withReport = params.reportPriceDate !== undefined;
+  // 공시 원문 근거(filingClues, 2026-10-01)가 생기기 전에 쓴 분석 글은 재사용하지 않는다 — 같은 질문을 다시 해도
+  // 원문 근거 없는 옛 글이 나오지 않게. 새 코드는 근거가 없어도 빈 배열을 남긴다
   return (
     rows.find(
       (r) =>
         r.id !== params.excludeAnalysisId &&
         r.explanation?.status === "ready" &&
+        Array.isArray(r.explanation.filingClues) &&
         (!withReport ||
           ((r.report_price_date ?? null) === params.reportPriceDate &&
             // 리포트를 읽고 쓴 글에는 관점(theme)이 붙는다
