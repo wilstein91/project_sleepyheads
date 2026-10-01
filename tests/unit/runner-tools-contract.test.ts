@@ -55,7 +55,10 @@ describe("Phase 2 도구 목록", () => {
       { seq: 2, tool: "search_news", output: { clues: [{ newsId: "n1" }], notes: [] } },
     ];
     const outcome = await TOOLS.write_explanation({}, { ...(ctx as object), previous } as never);
-    expect(outcome).toMatchObject({ status: "succeeded", inputSummary: "숫자 0개, 뉴스 1건" });
+    expect(outcome).toMatchObject({
+      status: "succeeded",
+      inputSummary: expect.stringContaining("숫자 0개, 뉴스 1건"),
+    });
     expect(outputsOf(previous as never, "search_news")).toHaveLength(1);
   });
 });

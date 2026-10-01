@@ -131,8 +131,14 @@ export async function findReusableExplanation(
     .limit(5);
   if (error) throw new Error(`재사용할 분석 조회 실패: ${error.message}`);
   const rows = (data ?? []) as { id: string; explanation: Explanation | null }[];
+  // 공시 원문 근거(filingClues, 2026-10-01)가 생기기 전에 쓴 분석 글은 재사용하지 않는다 — 같은 질문을 다시 해도
+  // 원문 근거 없는 옛 글이 나오지 않게. 새 코드는 근거가 없어도 빈 배열을 남긴다
   return (
-    rows.find((r) => r.id !== params.excludeAnalysisId && r.explanation?.status === "ready")
-      ?.explanation ?? null
+    rows.find(
+      (r) =>
+        r.id !== params.excludeAnalysisId &&
+        r.explanation?.status === "ready" &&
+        Array.isArray(r.explanation.filingClues),
+    )?.explanation ?? null
   );
 }

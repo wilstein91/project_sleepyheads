@@ -1,12 +1,14 @@
 // TECH §11.3~11.5: AI 호출 ③의 원본 출력을 검사·조립해 최종 Explanation으로 만든다.
 // 여기를 통과하지 못한 문장·투자 포인트는 통째로 버린다 — 절반만 채워지거나 지어낸 숫자가
 // 섞인 문장을 내보내지 않는다.
-import type { Chart, Explanation, Figure, Insight, NewsClue } from "@/contracts";
+import type { Chart, Explanation, Figure, FilingClue, Insight, NewsClue } from "@/contracts";
 import { EXPLANATION_LIMITS } from "@/contracts";
+import { buildDartDisclosureUrl } from "@/lib/disclosures/url";
+import type { FilingPassage } from "@/lib/filings/passages";
 import { containsBannedWord } from "./banned-words";
 import { containsLeak } from "./output-guard";
 import type { AiExplanation } from "./ai-explanation";
-import { resolveText } from "./placeholders";
+import { hasDisallowedRawNumber, resolveText } from "./placeholders";
 
 const FIXED_DISCLAIMER = "본 분석은 투자 권유가 아닙니다.";
 /** PRD §6.3.1 — 섞인 질문(범위 안 부분만 분석)일 때 분석 글 끝에 그대로 붙이는 고정 문구. */
@@ -55,6 +57,8 @@ export interface BuildExplanationInput {
   charts: Chart[];
   newsClues: NewsClue[];
   hasNews: boolean;
+  /** AI에 준 공시 원문 단락 (없으면 빈 배열) — 원인 문장은 뉴스 또는 이것을 근거로 달아야 남는다 */
+  filings?: FilingPassage[];
   mixedScope: boolean;
   /**
    * 서버가 만든 "계산 불가 (사유): 지표 분기" 줄 (`result.basis.flags`, 트랙 B `unavailableFlags`) — 그대로 주의사항에.
@@ -70,6 +74,12 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
   const citedNewsIds = input.hasNews
     ? input.ai.news_clues.map((n) => n.news_id).filter((id) => newsClueById.has(id))
     : [];
+  // 공시 원문도 같다 — 회사가 보고서에 직접 쓴 설명이라 원인 문장의 근거가 된다
+  const filingById = new Map((input.filings ?? []).map((f) => [f.id, f]));
+  const citedFilingIds = (input.ai.filing_clues ?? [])
+    .map((f) => f.filing_id)
+    .filter((id) => filingById.has(id));
+  const conclusionSources = citedNewsIds.length + citedFilingIds.length;
 
   // 결론은 앞에서부터 최대 2문장, 합계가 한 화면 분량(320자)을 넘지 않게 (§11.5, EXPLANATION_LIMITS)
   const conclusion: string[] = [];
@@ -81,7 +91,7 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
     if (text === null || rejected(text)) continue;
     // 결론도 뉴스 근거 없이 원인을 단정하지 않는다 (투자 포인트와 같은 검사, TECH §11.5)
     const causal = looksLikeCausalClaim(text);
-    if (causal && citedNewsIds.length === 0) continue;
+    if (causal && conclusionSources === 0) continue;
     if (conclusionChars + text.length > EXPLANATION_LIMITS.mainMaxChars) continue;
     if (causal) conclusionUsesNews = true;
     conclusion.push(text);
@@ -100,14 +110,17 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
 
     const figureIds = raw.figure_ids.filter((id) => id in input.figures);
     const newsIds = input.hasNews ? raw.news_ids.filter((id) => newsClueById.has(id)) : [];
-    if (figureIds.length === 0 && newsIds.length === 0) continue; // 근거 연결 검사
-    if (newsIds.length === 0 && looksLikeCausalClaim(text)) continue; // 원인 추정엔 뉴스 근거 필수 — `inferred` 자가 신고 여부와 무관하게 문장 자체를 검사(우회 방지)
+    const filingIds = (raw.filing_ids ?? []).filter((id) => filingById.has(id));
+    if (figureIds.length === 0 && newsIds.length === 0 && filingIds.length === 0) continue; // 근거 연결 검사
+    // 원인 추정엔 뉴스·공시 원문 근거 필수 — `inferred` 자가 신고 여부와 무관하게 문장 자체를 검사(우회 방지)
+    if (newsIds.length === 0 && filingIds.length === 0 && looksLikeCausalClaim(text)) continue;
 
     insights.push({
       kind: raw.kind,
       text,
       figureIds,
       newsIds,
+      filingIds,
       chartRef: chartRefOrNull(raw.chart_ref, chartIds),
       inferred: raw.inferred,
     });
@@ -144,6 +157,31 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
     ...input.newsClues.filter((n) => !referencedNewsIds.has(n.newsId)),
   ];
 
+  // 공시 원문 근거 = 남은 투자 포인트가 가리킨 단락 + AI가 인용했다고 밝힌 단락(결론은 "회사는 보고서에서 …"처럼
+  // 원인 낱말 없이도 원문을 쓴다), 원문 순서대로. 글자는 원문 그대로(서버가 가진 것), 주소는 접수번호로 서버가 만든
+  // DART 주소만. AI의 한 줄 설명은 숫자·금지어·주소가 있으면 뺀다
+  const usedFilingIds = new Set([
+    ...keptInsights.flatMap((i) => i.filingIds ?? []),
+    ...citedFilingIds,
+  ]);
+  const relevanceById = new Map(
+    (input.ai.filing_clues ?? []).map((f) => [f.filing_id, f.relevance]),
+  );
+  const filingClues: FilingClue[] = (input.filings ?? [])
+    .filter((f) => usedFilingIds.has(f.id))
+    .map((f) => {
+      const relevance = (relevanceById.get(f.id) ?? "").trim();
+      const safe = relevance && !hasDisallowedRawNumber(relevance) && !rejected(relevance);
+      return {
+        filingId: f.id,
+        reportName: f.reportName,
+        section: f.section,
+        excerpt: f.text,
+        url: buildDartDisclosureUrl(f.rceptNo),
+        relevance: safe ? relevance : "",
+      };
+    });
+
   const caveats = [
     FIXED_DISCLAIMER,
     ...input.ai.caveats
@@ -159,6 +197,7 @@ export function buildExplanation(input: BuildExplanationInput): Explanation {
     insights: keptInsights,
     evidence,
     newsClues,
+    filingClues,
     caveats,
     label: "AI 작성",
   };

@@ -19,6 +19,7 @@ import {
   adviceDecline,
 } from "../../../tests/fixtures/mock/declines";
 import { withMockNewsClues } from "../../../tests/fixtures/mock/news-clues";
+import { withMockFilingClues } from "../../../tests/fixtures/mock/filing-clues";
 import { samsungRevenueTrend } from "../../../tests/fixtures/mock/samsung-revenue-trend";
 import { skhynixRecent } from "../../../tests/fixtures/mock/skhynix-recent";
 import { skhynixValuation } from "../../../tests/fixtures/mock/skhynix-valuation";
@@ -88,6 +89,8 @@ function withResult(base: Analysis, company: CompanyRef): Analysis {
   } else if (/뉴스/.test(question) && company.name === "SK하이닉스" && analysis.explanation) {
     analysis.explanation = withMockNewsClues(analysis.explanation);
     if (analysis.request) analysis.request = { ...analysis.request, needsNews: true };
+  } else if (/원문/.test(question) && company.name === "SK하이닉스" && analysis.explanation) {
+    analysis.explanation = withMockFilingClues(analysis.explanation);
   }
   return analysis;
 }
