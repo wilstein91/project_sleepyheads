@@ -55,12 +55,12 @@ function axisLabelFor(
   }
 }
 
-function chartTitle(request: AnalysisRequestView, unit: Unit): string {
+function chartTitle(request: AnalysisRequestView, unit: Unit, name = request.target.name): string {
   const isComparison = request.groupBy === "company" || request.groupBy === "sector";
   const subject = isComparison ? "기업별 비교" : request.groupBy === "year" ? "연도별" : "분기별";
   const range = isComparison ? request.period.to : `${request.period.from}~${request.period.to}`;
   const suffix = unit === "KRW" ? "실적" : "지표";
-  return `${request.target.name} ${subject} ${suffix} (${range})`;
+  return `${name} ${subject} ${suffix} (${range})`;
 }
 
 /** TECH §7 금융사 부채비율 표 아래 주석 — **글자 그대로** (WU-303 완료조건) */
@@ -79,6 +79,8 @@ export interface ChartOptions {
   title?: string;
   type: Chart["type"];
   footnotes: string[];
+  /** 기본 제목 앞의 이름 — 없으면 대상 기업명 (여러 기업 분기·연도별은 "삼성전자·SK하이닉스") */
+  subject?: string;
 }
 
 /** 합계 차트의 제목·모양·주석 (PRD F-N3). 분기가 3개 이상이면 추이(선), 그보다 적으면 막대 */
@@ -194,7 +196,7 @@ export function buildCharts(
       type:
         options?.type ??
         (request.groupBy === "company" || request.groupBy === "sector" ? "bar" : "line"),
-      title: options?.title ?? chartTitle(request, unit),
+      title: options?.title ?? chartTitle(request, unit, options?.subject),
       yAxisLabel: axisLabelFor(unit, group, figures),
       series: group,
       footnotes: [

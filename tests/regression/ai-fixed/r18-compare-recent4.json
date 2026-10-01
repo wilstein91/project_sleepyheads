@@ -1,0 +1,29 @@
+{
+  "intent": "compare",
+  "companies": [
+    {
+      "query": "삼성전자",
+      "role": "target"
+    },
+    {
+      "query": "SK하이닉스",
+      "role": "peer"
+    }
+  ],
+  "metrics": ["operating_income"],
+  "period": {
+    "specified": true,
+    "from": null,
+    "to": null,
+    "text": "최근 4분기"
+  },
+  "group_by": "quarter",
+  "operations": [
+    {
+      "op": "compare",
+      "metric": "operating_income",
+      "base": null,
+      "peers": "SK하이닉스"
+    }
+  ]
+}
