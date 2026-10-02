@@ -24,15 +24,16 @@ function rewriteControl(phase: "idle" | "confirm" | "pending", notice: string | 
 }
 
 describe("BoardPanel 첫 화면", () => {
-  it("필터 막대(기간 연도·분기 선택·비교 기업)와 결과 화면의 모든 차트를 그린다", () => {
+  it("필터 막대(기간 시작·끝 연도·분기 드롭다운 4개·비교 기업)와 결과 화면의 모든 차트를 그린다", () => {
     const html = renderToStaticMarkup(
       createElement(BoardPanel, { analysisId: "a1", result, explanation }),
     );
-    for (const label of ["연도", "분기", "기간 적용", "최근 4개 분기"]) {
+    for (const label of ["시작 연도", "시작 분기", "끝 연도", "끝 분기", "기간 적용"]) {
       expect(html).toContain(label);
     }
-    // 프리셋 버튼(최근 8분기 등)은 없앴다
-    for (const label of ["최근 8분기", "최근 3년", "최근 5년", "시작 분기", "끝 분기"]) {
+    expect(html.match(/<select/g)?.length).toBeGreaterThanOrEqual(4);
+    // 프리셋 버튼(최근 4분기·8분기·3년·5년)은 없앴다
+    for (const label of ["최근 4분기", "최근 8분기", "최근 3년", "최근 5년"]) {
       expect(html).not.toContain(label);
     }
     expect(html).toContain("비교 기업 찾기");
