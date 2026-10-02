@@ -40,7 +40,23 @@ export function escapeIlikePattern(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-/** 완전히 같음 > 접두어로 시작 > 그 밖의 부분일치 순으로, 같은 등급이면 짧은 이름을 앞에 둔다. */
+/** 띄어쓰기·대소문자를 뺀 비교용 이름 ("SK 하이닉스" → "sk하이닉스") */
+export function compactCompanyName(name: string): string {
+  return name.replace(/\s+/g, "").toLowerCase();
+}
+
+/**
+ * 띄어쓰기를 무시하는 이름 검색용 Postgres 정규식 (PostgREST `imatch`, 대소문자 무시).
+ * 글자 사이마다 공백이 있어도 되게 한다 — "SK 하이닉스"로 SK하이닉스를, "CJENM"으로 CJ ENM을 찾는다.
+ * 글자는 하나씩 정규식 특수문자를 이스케이프한다 (사용자 입력이 패턴이 되지 않게).
+ */
+export function spaceInsensitivePattern(query: string): string {
+  return [...query.replace(/\s+/g, "")]
+    .map((char) => char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s*");
+}
+
+/** 완전히 같음 > 접두어로 시작 > 그 밖의 부분일치 순으로, 같은 등급이면 짧은 이름을 앞에 둔다 (띄어쓰기·대소문자 무시). */
 export function rankCompanyRowsByRelevance(rows: CompanyRow[], query: string): CompanyRow[] {
   return [...rows].sort((a, b) => {
     const scoreDiff = relevanceScore(a.corp_name, query) - relevanceScore(b.corp_name, query);
@@ -51,6 +67,9 @@ export function rankCompanyRowsByRelevance(rows: CompanyRow[], query: string): C
 
 function relevanceScore(corpName: string, query: string): number {
   if (corpName === query) return 0;
-  if (corpName.startsWith(query)) return 1;
+  const name = compactCompanyName(corpName);
+  const q = compactCompanyName(query);
+  if (name === q) return 0;
+  if (name.startsWith(q)) return 1;
   return 2;
 }

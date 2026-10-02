@@ -8,6 +8,7 @@ import {
   type CompanyRow,
   escapeIlikePattern,
   rankCompanyRowsByRelevance,
+  spaceInsensitivePattern,
   toCompanyRef,
 } from "./row";
 
@@ -44,7 +45,17 @@ export async function searchCompanies(
       .order("corp_name", { ascending: true })
       .limit(boundedLimit * FETCH_MULTIPLIER);
     if (error) throw new Error(`기업 검색 실패: ${error.message}`);
-    return (data ?? []) as unknown as CompanyRow[];
+    const rows = (data ?? []) as unknown as CompanyRow[];
+    if (rows.length > 0 || !text.replace(/\s+/g, "")) return rows;
+    // 그대로는 없으면 띄어쓰기를 무시하고 다시 ("SK 하이닉스" → SK하이닉스, "CJENM" → CJ ENM)
+    const spaceless = await admin
+      .from("companies")
+      .select(COMPANY_SELECT_COLUMNS)
+      .filter("corp_name", "imatch", spaceInsensitivePattern(text))
+      .order("corp_name", { ascending: true })
+      .limit(boundedLimit * FETCH_MULTIPLIER);
+    if (spaceless.error) throw new Error(`기업 검색 실패: ${spaceless.error.message}`);
+    return (spaceless.data ?? []) as unknown as CompanyRow[];
   };
 
   // 종목코드(6자리)면 코드가 같은 기업 (Phase 4 통합: 보드가 비교 기업 칩 이름을 종목코드로 찾는다 — STEP4_PASS_TEST §1.2 #2,

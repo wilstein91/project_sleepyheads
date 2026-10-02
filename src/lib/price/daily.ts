@@ -41,6 +41,8 @@ export interface LoadedPrices {
   rows: PriceRow[];
   /** 이번에 부른 주가 API 수 (저장된 가격을 쓰면 0) */
   externalCalls: number;
+  /** 주가 API가 실패해 기간 안에 저장된 (더 이른) 가격으로 대신한 종목 */
+  staleCodes?: string[];
 }
 
 interface PriceItem {
@@ -81,7 +83,9 @@ interface StoredPrice {
 
 /**
  * `stockCodes`의 기간 안 가격과 결합 기준일. 기준일은 기간 안 가장 늦은 거래일이다(여러 기업이면 그중 가장 늦은 날 —
- * 그날 가격이 없는 기업은 거래정지 등으로 보고 `NO_PRICE`가 된다). 주가 API 오류는 그대로 던진다.
+ * 그날 가격이 없는 기업은 거래정지 등으로 보고 `NO_PRICE`가 된다).
+ * 주가 API가 실패하면(키 누락·한도·점검) 기간 안에 저장된 가격이 있는 종목은 그 가격으로 대신하고(`staleCodes`),
+ * 저장된 가격도 없으면 오류를 그대로 던진다.
  */
 export async function loadPrices(
   stockCodes: readonly string[],
@@ -100,6 +104,7 @@ export async function loadPrices(
   ]);
   const gate = createConcurrencyGate(FETCH_CONCURRENCY);
   let externalCalls = 0;
+  const staleCodes: string[] = [];
   const perCode = await Promise.all(
     codes.map(async (code) => {
       const mine = stored.filter((r) => r.stock_code === code);
@@ -111,7 +116,15 @@ export async function loadPrices(
         return mine.map(fromStored);
       }
       externalCalls += 1;
-      const items = await gate.run(() => fetchStock(code, from, to, window, options));
+      let items: PriceItem[];
+      try {
+        items = await gate.run(() => fetchStock(code, from, to, window, options));
+      } catch (err) {
+        if (mine.length === 0) throw err;
+        console.warn(`[price] 주가를 받지 못해 저장된 가격으로 대신 (${code}):`, err);
+        staleCodes.push(code);
+        return mine.map(fromStored);
+      }
       await store(options.client, items, now);
       const rows = items.map(fromItem).filter((r) => r.baseDate >= from && r.baseDate <= to);
       await recordFetch(options.client, code, from, to, rows, now);
@@ -120,7 +133,12 @@ export async function loadPrices(
   );
   const rows = perCode.flat();
   const dates = rows.filter((r) => codes.includes(r.stockCode)).map((r) => r.baseDate);
-  return { baseDate: dates.length > 0 ? dates.sort().at(-1)! : null, rows, externalCalls };
+  return {
+    baseDate: dates.length > 0 ? dates.sort().at(-1)! : null,
+    rows,
+    externalCalls,
+    ...(staleCodes.length > 0 ? { staleCodes } : {}),
+  };
 }
 
 /**

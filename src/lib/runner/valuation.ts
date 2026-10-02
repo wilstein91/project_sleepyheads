@@ -139,6 +139,11 @@ export async function prepareValuation(input: PrepareValuationInput): Promise<Pr
     }),
     loadListings(input.client, rows),
   ]);
+  if (loaded.staleCodes?.length && loaded.baseDate) {
+    priceWarnings.push(
+      `주가를 새로 받지 못해 저장된 ${loaded.baseDate}까지의 종가로 시가총액·PER·PBR을 계산했습니다`,
+    );
+  }
   // 재실행은 저장된 날짜 그대로 (그날 가격이 없으면 NO_PRICE — 다른 날 가격으로 바꾸지 않는다)
   const baseDate = input.priceDate ?? loaded.baseDate;
   const joined = joinFinancialsWithPrices({

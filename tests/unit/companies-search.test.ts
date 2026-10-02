@@ -61,6 +61,12 @@ describe("searchCompanies (WU-103, API_SPEC S1)", () => {
     expect(result).toHaveLength(10);
   });
 
+  it("띄어쓰기가 달라도 찾는다 — 'SK 하이닉스' → SK하이닉스", async () => {
+    const { client } = createFakeCompaniesClient(ROWS);
+    const result = await searchCompanies("SK 하이닉스", 10, { client });
+    expect(result.map((c) => c.name)).toContain("SK하이닉스");
+  });
+
   it("빈 질의는 조회 없이 빈 배열", async () => {
     const { client } = createFakeCompaniesClient(ROWS);
     const result = await searchCompanies("   ", 10, { client });

@@ -145,6 +145,11 @@ export async function buildCompanyReport(
 
   const stats = history ? priceStats(history.days) : null;
   if (history && !stats) notes.push("최근 1년 거래 기록이 없습니다 (거래정지 등)");
+  if (history?.stale && stats) {
+    notes.push(
+      `주가를 새로 받지 못해 저장된 ${stats.last.date} 종가로 주가·밸류에이션을 계산했습니다`,
+    );
+  }
 
   const builder = new ReportBuilder(company, stats);
   const profile = builder.profile(shareholder?.fact ?? null, dividend?.fact ?? null);

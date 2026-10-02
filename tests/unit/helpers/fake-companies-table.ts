@@ -3,7 +3,7 @@ import type { CompanyRow } from "@/lib/companies/row";
 
 /**
  * `companies` 테이블(+ 임베드된 `sectors`)만 흉내 내는 가짜 Supabase 클라이언트.
- * `resolveCompany`·`searchCompanies`가 실제로 쓰는 체인(`select→eq/ilike→order→limit→maybeSingle`)만
+ * `resolveCompany`·`searchCompanies`가 실제로 쓰는 체인(`select→eq/ilike/filter(imatch)→order→limit→maybeSingle`)만
  * 지원한다. ILIKE 패턴은 정규식으로 바꿔 메모리 배열을 그대로 필터링한다.
  */
 export function createFakeCompaniesClient(rows: CompanyRow[]) {
@@ -26,6 +26,13 @@ function makeBuilder(allRows: CompanyRow[]) {
     },
     ilike: (column: keyof CompanyRow, pattern: string) => {
       const regex = ilikePatternToRegExp(pattern);
+      rows = rows.filter((row) => regex.test(String(row[column] ?? "")));
+      return builder;
+    },
+    // PostgREST 정규식 필터 (`imatch` = Postgres `~*`). 띄어쓰기 무시 검색이 쓰는 `\s*`는 JS 정규식과 같다
+    filter: (column: keyof CompanyRow, operator: string, pattern: string) => {
+      if (operator !== "imatch") throw new Error(`지원하지 않는 필터: ${operator}`);
+      const regex = new RegExp(pattern, "i");
       rows = rows.filter((row) => regex.test(String(row[column] ?? "")));
       return builder;
     },
