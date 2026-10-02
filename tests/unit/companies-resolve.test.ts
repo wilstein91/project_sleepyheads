@@ -113,6 +113,36 @@ describe("resolveCompany (WU-103, TECH §4.4)", () => {
     });
   });
 
+  it("띄어쓰기·대소문자가 달라도 같은 이름이면 확정한다 — 'SK 하이닉스'·'sk 하이닉스' → SK하이닉스", async () => {
+    const { client } = createFakeCompaniesClient(ALL_ROWS);
+    for (const query of ["SK 하이닉스", "sk 하이닉스", "S K하이 닉스"]) {
+      expect(await resolveCompany(query, { client })).toEqual({
+        type: "resolved",
+        company: expect.objectContaining({ name: "SK하이닉스" }),
+      });
+    }
+  });
+
+  it("정식 이름에 띄어쓰기가 있어도 붙여 쓴 입력으로 찾는다 — 'CJENM' → CJ ENM", async () => {
+    const cjEnm: CompanyRow = {
+      ...SAMSUNG,
+      corp_code: "00265324",
+      stock_code: "035760",
+      corp_name: "CJ ENM",
+      sectors: { name: "미디어", is_financial: false },
+    };
+    const { client } = createFakeCompaniesClient([...ALL_ROWS, cjEnm]);
+    expect(await resolveCompany("CJENM", { client })).toEqual({
+      type: "resolved",
+      company: expect.objectContaining({ name: "CJ ENM" }),
+    });
+  });
+
+  it("띄어쓰기 무시 검색도 정규식 특수문자는 글자 그대로 — 'S.K하이닉스'는 not_found", async () => {
+    const { client } = createFakeCompaniesClient(ALL_ROWS);
+    expect(await resolveCompany("S.K하이닉스", { client })).toEqual({ type: "not_found" });
+  });
+
   it("존재하지 않는 이름은 not_found", async () => {
     const { client } = createFakeCompaniesClient(ALL_ROWS);
     const result = await resolveCompany("존재하지않는기업이름", { client });

@@ -60,9 +60,15 @@ export interface PriceHistory {
   days: DailyPrice[];
   /** 이번에 부른 주가 API 수 (오늘 받은 것이 있으면 0) */
   externalCalls: number;
+  /** 주가 API가 실패해 예전에 받아 둔 시세를 대신 썼다 (리포트가 기준일과 함께 안내한다) */
+  stale?: true;
 }
 
-/** 종목 하나의 1년 일별 시세 — 오늘(KST) 받아 둔 것이 있으면 그대로 쓴다. 주가 API 오류는 그대로 던진다 */
+/**
+ * 종목 하나의 1년 일별 시세 — 오늘(KST) 받아 둔 것이 있으면 그대로 쓴다.
+ * 주가 API가 실패하면(키 누락·한도·점검) 예전에 받아 둔 시세로 대신한다(`stale`) — 받아 둔 것도 없으면 오류를 던진다.
+ * 2026-10-02 운영: 배포 환경에 주가 키가 없어 어제 받아 둔 시세가 있는데도 PER·PBR이 "계산 불가"였다.
+ */
 export async function loadPriceHistory(
   stockCode: string,
   options: LoadPriceHistoryOptions,
@@ -74,20 +80,19 @@ export async function loadPriceHistory(
     return { days: cached.days, externalCalls: 0 };
   }
 
-  const res = await priceFetch<PriceListResponse>(
-    PRICE_PATH,
-    {
-      numOfRows: MAX_ROWS,
-      pageNo: 1,
-      likeSrtnCd: stockCode,
-      beginBasDt: addDays(today, -HISTORY_DAYS).replaceAll("-", ""),
-    },
-    {
-      client: options.client,
-      userId: options.userId ?? null,
-      analysisId: options.analysisId ?? null,
-    },
-  );
+  let res: PriceListResponse;
+  try {
+    res = await fetchHistory(stockCode, today, options);
+  } catch (err) {
+    if (cached && cached.days.length > 0) {
+      console.warn(
+        `[report] 주가를 받지 못해 저장된 시세(${cached.days.at(-1)!.date})로 대신:`,
+        err,
+      );
+      return { days: cached.days, externalCalls: 0, stale: true };
+    }
+    throw err;
+  }
   const items = res.response.body?.items;
   const raw = items && typeof items === "object" ? items.item : undefined;
   const list = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
@@ -101,6 +106,27 @@ export async function loadPriceHistory(
   const days = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   await writeCached(options.client, stockCode, days, now);
   return { days, externalCalls: 1 };
+}
+
+function fetchHistory(
+  stockCode: string,
+  today: string,
+  options: LoadPriceHistoryOptions,
+): Promise<PriceListResponse> {
+  return priceFetch<PriceListResponse>(
+    PRICE_PATH,
+    {
+      numOfRows: MAX_ROWS,
+      pageNo: 1,
+      likeSrtnCd: stockCode,
+      beginBasDt: addDays(today, -HISTORY_DAYS).replaceAll("-", ""),
+    },
+    {
+      client: options.client,
+      userId: options.userId ?? null,
+      analysisId: options.analysisId ?? null,
+    },
+  );
 }
 
 function toDaily(i: PriceItem): DailyPrice | null {

@@ -9,8 +9,10 @@ export { COMPANY_ALIASES, canonicalCompanyName } from "./aliases";
 import {
   COMPANY_SELECT_COLUMNS,
   type CompanyRow,
+  compactCompanyName,
   escapeIlikePattern,
   rankCompanyRowsByRelevance,
+  spaceInsensitivePattern,
   toCompanyRef,
 } from "./row";
 
@@ -36,6 +38,8 @@ export interface ResolveCompanyOptions {
  * - 그 밖에는 이름이 정확히 일치하는 기업이 하나뿐이면 바로 확정한다(예: "삼성전자"가
  *   "삼성전자우"까지 후보로 걸리는 걸 막는다).
  * - 아니면 부분일치(`ILIKE %query%`)로 찾아, 결과가 하나면 확정, 여럿이면 후보 목록을 돌려준다.
+ * - 부분일치도 없으면 **띄어쓰기를 무시하고** 다시 찾는다 ("SK 하이닉스" → SK하이닉스, "CJENM" → CJ ENM).
+ *   후보 중 띄어쓰기·대소문자만 다른 이름이 하나뿐이면 그 기업으로 확정한다.
  * - 기업개황(시장·결산월·섹터)이 아직 없는 기업은 **여기서 처음 조회해 채운다** (TECH §3.1 "첫 조회 시",
  *   WU-104). 기업 목록 동기화(WU-103)는 이름·코드만 넣기 때문이다. 조회는 기업당 30일에 한 번.
  */
@@ -91,6 +95,10 @@ async function resolveByName(
   const candidates = await findCandidatesByName(admin, name);
   if (candidates.length === 0) return { type: "not_found" };
   if (candidates.length === 1) return { type: "resolved", company: candidates[0] };
+  // 띄어쓰기·대소문자만 다른 이름이 하나뿐이면 그 기업 ("sk 하이닉스"가 SK하이닉스·SK하이닉스우 둘에 걸려도 본주)
+  const compact = compactCompanyName(name);
+  const same = candidates.filter((c) => compactCompanyName(c.name) === compact);
+  if (same.length === 1) return { type: "resolved", company: same[0] };
   return { type: "candidates", candidates };
 }
 
@@ -105,12 +113,26 @@ async function findCandidatesByName(admin: SupabaseClient, name: string): Promis
 
   if (error) throw new Error(`기업 조회 실패: ${error.message}`);
 
-  const rows = (data ?? []) as unknown as CompanyRow[];
+  let rows = (data ?? []) as unknown as CompanyRow[];
+  if (rows.length === 0) rows = await findBySpacelessName(admin, name);
   const ranked = rankCompanyRowsByRelevance(rows, name);
   // 개황이 이미 있는 기업이 충분하면 전자공시를 부르지 않는다
   const ready = ranked.map(toCompanyRef).filter((c): c is CompanyRef => c !== null);
   if (ready.length >= MAX_CANDIDATES) return ready.slice(0, MAX_CANDIDATES);
   return withProfiles(admin, ranked.slice(0, MAX_CANDIDATES));
+}
+
+/** 띄어쓰기를 무시한 부분일치 (Postgres 정규식, 대소문자 무시) — 입력과 정식 이름의 띄어쓰기가 다를 때 */
+async function findBySpacelessName(admin: SupabaseClient, name: string): Promise<CompanyRow[]> {
+  if (!name.replace(/\s+/g, "")) return [];
+  const { data, error } = await admin
+    .from("companies")
+    .select(COMPANY_SELECT_COLUMNS)
+    .filter("corp_name", "imatch", spaceInsensitivePattern(name))
+    .order("corp_name", { ascending: true })
+    .limit(CANDIDATE_FETCH_LIMIT);
+  if (error) throw new Error(`기업 조회 실패: ${error.message}`);
+  return (data ?? []) as unknown as CompanyRow[];
 }
 
 /**
